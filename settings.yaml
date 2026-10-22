@@ -1,11 +1,11 @@
 # Shared settings. Everyone uses these values. Change them only with team agreement.
 
 llm:
-  model: "TO_DECIDE"        # the exact Ollama model name and tag
+  model: "llama3.1:8b"      # the exact Ollama model name and tag
   temperature: 0.2
 
 embeddings:
-  model: "TO_DECIDE"        # the model used to search the company rules
+  model: "nomic-embed-text" # the model used to search the company rules
 
 rag:
   store: "chroma"           # the rules search lives in Chroma, the tables in PostgreSQL
