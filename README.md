@@ -150,3 +150,9 @@ Never put your `.env` file on GitHub. It is already blocked, so `git add .` will
 1. Install Ollama from ollama.com/download. It needs about 15 GB of free disk space with the models.
 2. Download the model the team picked (written in `settings.yaml`), for example `ollama pull <model>`.
 3. If your computer is too small, a teammate can run Ollama for you: put their address in your `.env` as `OLLAMA_BASE_URL`.
+
+### 4. The company rules search
+
+1. Install Chroma: `pip install -e ".[dev,rag]"`. If Windows blocks it, set `rag: store: "local"` in your own copy of `settings.yaml` (don't push that change) and skip this step.
+2. With Ollama running, build the index: `python scripts/build_index.py "Combien coûte la Box Fibre ?"`
+3. Build it again whenever a file in `data/policies/` changes.

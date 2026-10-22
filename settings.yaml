@@ -9,6 +9,8 @@ embeddings:
 
 rag:
   store: "chroma"           # the rules search lives in Chroma, the tables in PostgreSQL
+                            # use "local" (a plain JSON file) if Chroma cannot be installed on your computer
+  top_k: 4                  # how many rule sections a search returns
 
 database:
   # The address of your PostgreSQL database is read from the .env file (see .env.example),
