@@ -38,6 +38,7 @@ This is the plan. Folders will appear as we build them.
 | `callverse/llm.py` | The one place where the AI model is set up. Everyone uses it. |
 | `callverse/graph.py` | Decides which worker speaks next during a call |
 | `callverse/knowledge.py` | The one place where workers search the company rules |
+| `callverse/config.py` | Reads `settings.yaml` and your `.env` file |
 | `callverse/agents/` | One folder per worker |
 | `workforce/` | The pretend call center and the floor manager |
 | `dashboard/` | The scoreboard |
@@ -119,6 +120,33 @@ We store customers, complaints, and tickets in PostgreSQL.
 
 Never put your `.env` file on GitHub. It is already blocked, so `git add .` will skip it.
 
-### 2. The rest
+### 2. Python and the project
 
-Coming soon. We will add the steps once the team picks the AI model.
+1. Install Python 3.11 or newer from python.org.
+2. In the project folder, create and turn on your own Python space:
+
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate        # Windows: .venv\Scripts\Activate.ps1
+   ```
+
+   On Windows, if `python` is blocked or points to another program, use `py -m venv .venv` instead.
+3. Install the project and its packages:
+
+   ```bash
+   pip install -e ".[dev]"
+   ```
+
+4. Check that a full pretend call works:
+
+   ```bash
+   pytest
+   ```
+
+   This needs no AI model and no database. Run it before every pull request.
+
+### 3. The AI model
+
+1. Install Ollama from ollama.com/download. It needs about 15 GB of free disk space with the models.
+2. Download the model the team picked (written in `settings.yaml`), for example `ollama pull <model>`.
+3. If your computer is too small, a teammate can run Ollama for you: put their address in your `.env` as `OLLAMA_BASE_URL`.

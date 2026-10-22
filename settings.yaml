@@ -15,6 +15,12 @@ database:
   # so each person can use their own password without putting it on GitHub.
   url_from_env: "DATABASE_URL"
 
+call:
+  max_turns: 12             # a call stops after this many customer messages (outcome "abandoned")
+
+money:
+  currency: "EUR"           # every amount is stored in cents: 2999 means 29.99 EUR
+
 paths:
   policies: "data/policies"
   raw: "data/raw"
