@@ -37,11 +37,14 @@ This is the plan. Folders will appear as we build them.
 | `callverse/state.py` | The "case file" that travels through a call. Everyone agrees on it before changing it. |
 | `callverse/llm.py` | The one place where the AI model is set up. Everyone uses it. |
 | `callverse/graph.py` | Decides which worker speaks next during a call |
+| `callverse/knowledge.py` | The one place where workers search the company rules |
 | `callverse/agents/` | One folder per worker |
 | `workforce/` | The pretend call center and the floor manager |
 | `dashboard/` | The scoreboard |
-| `data/` | Company rules and pretend customer data |
-| `scripts/` | Small programs that prepare the data |
+| `data/policies/` | Company rules, written as text files |
+| `data/raw/` | Downloaded public datasets. Not on GitHub because they are too big. |
+| `scripts/` | Small programs that prepare the data and fill the database |
+| `.env.example` | A model for your own `.env` file, which holds your database password |
 | `tests/` | Checks that one full call still works |
 
 ## The team
@@ -64,7 +67,7 @@ This is the plan. Folders will appear as we build them.
 4. When your task works, open a pull request. One teammate checks it.
 5. Click "Squash and merge", then delete the branch.
 6. Start your next task from a fresh `main`.
-7. Ask the team before changing `state.py`, `llm.py`, or `graph.py`, because everyone depends on them.
+7. Ask the team before changing `state.py`, `llm.py`, `graph.py`, or `knowledge.py`, because everyone depends on them.
 
 ## Everyday commands
 
@@ -104,5 +107,18 @@ git pull origin main
 ```
 
 ## Setting up on your computer
+
+### 1. The database
+
+We store customers, complaints, and tickets in PostgreSQL.
+
+1. Install PostgreSQL from postgresql.org/download. Remember the password you choose during the install.
+2. Open "SQL Shell (psql)", log in with that password, and type: `CREATE DATABASE callverse;`
+3. In the project folder, copy `.env.example` to a new file named `.env`.
+4. In `.env`, replace `YOUR_PASSWORD` with your PostgreSQL password.
+
+Never put your `.env` file on GitHub. It is already blocked, so `git add .` will skip it.
+
+### 2. The rest
 
 Coming soon. We will add the steps once the team picks the AI model.

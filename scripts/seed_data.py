@@ -1,1 +1,5 @@
-"""Creates the same pretend customers, contracts, and past tickets on every computer."""
+"""Fills the PostgreSQL database with the same data on every computer.
+
+Tables: customers (from IBM Telco), complaints, tickets.
+Uses a fixed random seed so everyone gets identical pretend data.
+"""

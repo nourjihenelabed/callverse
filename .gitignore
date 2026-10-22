@@ -7,10 +7,9 @@ venv/
 # Secrets and local settings
 .env
 
-# Generated data (rebuild it with the scripts)
-data/generated/
+# Downloaded datasets and generated data (too big, rebuild them with the scripts)
+data/raw/
 data/index/
-*.db
 
 # Editors and system files
 .vscode/

@@ -7,7 +7,15 @@ llm:
 embeddings:
   model: "TO_DECIDE"        # the model used to search the company rules
 
+rag:
+  store: "chroma"           # the rules search lives in Chroma, the tables in PostgreSQL
+
+database:
+  # The address of your PostgreSQL database is read from the .env file (see .env.example),
+  # so each person can use their own password without putting it on GitHub.
+  url_from_env: "DATABASE_URL"
+
 paths:
   policies: "data/policies"
-  database: "data/generated/callverse.db"
+  raw: "data/raw"
   index: "data/index"
