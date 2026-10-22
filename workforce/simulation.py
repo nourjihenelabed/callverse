@@ -26,6 +26,46 @@ import simpy
 QUEUES = ("general", "technical", "complaint")
 
 
+# ---------------------------------------------------------------- surprise peaks
+
+@dataclass(frozen=True)
+class Surge:
+    """Calls the forecast does not know about: `factor` times the usual calls of
+    `queue` between start_hour and end_hour (clock hours, e.g. 10 to 13).
+    A factor below 1 means fewer calls than forecast (a quiet day)."""
+
+    queue: str
+    start_hour: int
+    end_hour: int
+    factor: float
+
+
+SCENARIOS = {
+    "normal": (),
+    # the network goes down: technical calls double, angry customers call back with complaints
+    "network_outage": (Surge("technical", 10, 13, 2.0), Surge("complaint", 11, 14, 1.5)),
+    # bills are sent: more questions and complaints all day
+    "billing_day": (Surge("general", 8, 20, 1.3), Surge("complaint", 8, 20, 1.6)),
+    # an advertising campaign: many people call about the offer in the afternoon
+    "afternoon_promo": (Surge("general", 14, 17, 1.8),),
+}
+
+# Never used in training: they test whether the agent learned to react, or only memorized
+# the training peaks.
+HELD_OUT_SCENARIOS = {
+    # the same outage, but in the late afternoon instead of the morning
+    "late_outage": (Surge("technical", 16, 19, 2.0), Surge("complaint", 17, 20, 1.5)),
+    # a bigger outage than any seen in training
+    "big_outage": (Surge("technical", 10, 13, 2.5), Surge("complaint", 11, 14, 1.8)),
+    # complaints pile up on their own (in training they only rose with other queues)
+    "complaint_storm": (Surge("complaint", 9, 12, 2.5),),
+    # 30% fewer calls than forecast all day: does the agent waste money on staff?
+    "quiet_day": tuple(Surge(q, 8, 20, 0.7) for q in QUEUES),
+}
+
+ALL_SCENARIOS = SCENARIOS | HELD_OUT_SCENARIOS
+
+
 # ---------------------------------------------------------------- settings of the pretend center
 
 @dataclass
@@ -39,12 +79,16 @@ class CenterConfig:
     handle_spread: float = 0.6                 # log-normal spread of call durations
     mean_patience_minutes: dict = field(default_factory=lambda: {"general": 3.0, "technical": 4.0, "complaint": 5.0})
     # the advisors on the roster: (how many, which queues they can work on)
+    # 30 advisors can be called in; the Erlang C plan never needs more than 24,
+    # the others are on call for surprise peaks (paid only when on duty)
     roster: tuple = (
         (9, ("general",)),
-        (9, ("general", "technical")),
-        (6, ("general", "complaint")),
+        (12, ("general", "technical")),
+        (9, ("general", "complaint")),
     )
     decision_minutes: int = 15                 # how often the policy decides
+    min_shift_minutes: int = 60                # an advisor called in stays on duty at least this long
+    switch_minutes: float = 2.0                # time to set up when moving to another queue (paid, no calls)
     sla_seconds: int = 20                      # target: answer within 20 seconds...
     sla_target: float = 0.80                   # ...for 80% of calls
     cost_per_advisor_hour: float = 25.0        # euros, for each advisor on duty
@@ -71,6 +115,9 @@ class Snapshot:
     last_sla: float                            # share of last period's calls answered within the SLA
     last_abandoned: int                        # customers who hung up in the last period
     calls_next_hour: float                     # forecast of calls in the coming hour
+    priority: bool = False                     # are multi-skilled advisors serving specialist queues first?
+    last_calls: dict = field(default_factory=dict)      # calls received in the last period, per queue
+    expected_calls: dict = field(default_factory=dict)  # calls the forecast expected in that period, per queue
 
 
 class Policy:
@@ -79,6 +126,10 @@ class Policy:
     The answer is a dict like {"general": 8, "technical": 5, "complaint": 3}.
     Advisors not asked for are off duty (and cost nothing). If a queue asks for
     more advisors than have that skill, it gets as many as possible.
+    Realistic limits apply: an advisor called in stays at least min_shift_minutes,
+    and moving to another queue takes switch_minutes.
+    Add "priority": True to let multi-skilled advisors working on general calls
+    serve waiting technical or complaint calls first.
     """
 
     def decide(self, snapshot: Snapshot) -> dict:
@@ -99,6 +150,7 @@ class DayResult:
     on_duty_minutes: float
     staff_cost: float
     unanswered_at_close: int
+    switches: int = 0                          # times an advisor moved to another queue
 
     def kpis(self) -> dict:
         offered = sum(self.offered.values())
@@ -112,6 +164,7 @@ class DayResult:
             "occupancy": round(self.busy_minutes / self.on_duty_minutes, 4) if self.on_duty_minutes else 0.0,
             "staff_cost_eur": round(self.staff_cost, 2),
             "satisfaction": round(self.satisfaction_total / offered, 3) if offered else 0.0,
+            "queue_switches": self.switches,
             "per_queue": {
                 q: {
                     "calls": self.offered[q],
@@ -145,31 +198,56 @@ class _Call:
 class CallCenter:
     """One simulated day. Usage: CallCenter(policy, seed=1).run().kpis()"""
 
-    def __init__(self, policy: Policy, seed: int = 0, config: CenterConfig | None = None):
+    def __init__(self, policy: Policy, seed: int = 0, config: CenterConfig | None = None, scenario="normal"):
+        """`scenario` is a name from ALL_SCENARIOS, or a tuple of Surge (used for random training days)."""
         self.policy, self.config = policy, config or CenterConfig()
+        self.scenario = scenario
+        self.surges = ALL_SCENARIOS[scenario] if isinstance(scenario, str) else tuple(scenario)
+        self._drop_rng = random.Random(seed * 1000 + 999)   # own random numbers for quiet periods
+        self.seed = seed
         self.rng = random.Random(seed)
         self.env = simpy.Environment()
         self.queues = {q: simpy.Store(self.env) for q in QUEUES}
         self.advisors = [skills for count, skills in self.config.roster for _ in range(count)]
         self.assignment = [None] * len(self.advisors)    # queue name, or None when off duty
         self.busy = [False] * len(self.advisors)
+        self.on_since = [None] * len(self.advisors)       # when each advisor was called in
+        self.serving = [None] * len(self.advisors)        # the queue each advisor is set up for
+        self.priority = False
         self.waiting = {q: 0 for q in QUEUES}
         zeros = lambda: {q: 0 for q in QUEUES}  # noqa: E731
         self.result = DayResult(zeros(), zeros(), zeros(), zeros(), {q: 0.0 for q in QUEUES},
                                 0.0, 0.0, 0.0, 0.0, 0)
-        self._period = {"waits": {q: [] for q in QUEUES}, "answered": 0, "within": 0, "abandoned": 0, "offered": 0}
+        self._period = {"waits": {q: [] for q in QUEUES}, "answered": 0, "within": 0, "abandoned": 0, "offered": 0,
+                        "offered_q": {q: 0 for q in QUEUES}, "start": 0.0}
         self._wakeups = [self.env.event() for _ in self.advisors]
 
     # ---- the day
+    @property
+    def end_minute(self) -> int:
+        return self.config.day_minutes + self.config.overtime_minutes
+
     def run(self) -> DayResult:
-        cfg = self.config
-        self.env.process(self._manager())
-        self.env.process(self._arrivals())
-        for i in range(len(self.advisors)):
-            self.env.process(self._advisor(i))
-        self.env.run(until=cfg.day_minutes + cfg.overtime_minutes)
-        self.result.unanswered_at_close = sum(self.waiting.values())
+        """Runs the whole day at once."""
+        self.run_until(self.end_minute)
         return self.result
+
+    def run_until(self, minute: float) -> None:
+        """Runs the day up to `minute` (used by the RL environment, one decision at a time)."""
+        if not getattr(self, "_started", False):
+            self._started = True
+            self.env.process(self._manager())
+            self.env.process(self._arrivals())
+            for k, surge in enumerate(self.surges):
+                self.env.process(self._surge_arrivals(surge, random.Random(self.seed * 1000 + k + 1)))
+            for i in range(len(self.advisors)):
+                self.env.process(self._advisor(i))
+        self.env.run(until=min(minute, self.end_minute))
+        self.result.unanswered_at_close = sum(self.waiting.values())
+
+    @property
+    def finished(self) -> bool:
+        return self.env.now >= self.end_minute
 
     # ---- customers
     def _rate_at(self, minute: float) -> float:
@@ -185,12 +263,41 @@ class CallCenter:
                 return
             if self.rng.random() < self._rate_at(self.env.now) / peak:
                 queue = self.rng.choices(QUEUES, weights=[cfg.call_mix[q] for q in QUEUES])[0]
+                if self._dropped(queue):            # quieter than forecast: this call never comes
+                    continue
                 self.env.process(self._customer(queue))
+
+    def _dropped(self, queue) -> bool:
+        clock = self.config.open_hour + self.env.now / 60
+        for surge in self.surges:
+            if surge.factor < 1 and surge.queue == queue and surge.start_hour <= clock < surge.end_hour:
+                return self._drop_rng.random() >= surge.factor
+        return False
+
+    def _surge_arrivals(self, surge: Surge, rng: random.Random):
+        if surge.factor <= 1:                       # quiet periods are handled in _arrivals
+            return
+            yield
+        """The extra calls of a surprise peak, on top of the usual ones (own random numbers,
+        so a normal day stays exactly the same)."""
+        cfg = self.config
+        start = (surge.start_hour - cfg.open_hour) * 60
+        end = min((surge.end_hour - cfg.open_hour) * 60, cfg.day_minutes)
+        extra = lambda minute: self._rate_at(minute) * cfg.call_mix[surge.queue] * (surge.factor - 1)  # noqa: E731
+        peak = max(extra(start + 60 * h) for h in range(max(1, (end - start) // 60))) or 1e-9
+        yield self.env.timeout(max(0, start))
+        while True:
+            yield self.env.timeout(rng.expovariate(peak))
+            if self.env.now >= end:
+                return
+            if rng.random() < extra(self.env.now) / peak:
+                self.env.process(self._customer(surge.queue))
 
     def _customer(self, queue):
         cfg, call = self.config, _Call(self.env, queue)
         self.result.offered[queue] += 1
         self._period["offered"] += 1
+        self._period["offered_q"][queue] += 1
         self.waiting[queue] += 1
         yield self.queues[queue].put(call)
         self._wake(queue)
@@ -204,22 +311,34 @@ class CallCenter:
             self.result.satisfaction_total += satisfaction_after(None)
 
     # ---- advisors
+    def _can_take(self, i, queue) -> bool:
+        assigned = self.assignment[i]
+        return assigned == queue or (self.priority and assigned == "general" and queue in self.advisors[i])
+
     def _wake(self, queue):
-        for i, assigned in enumerate(self.assignment):
-            if assigned == queue and not self.busy[i] and not self._wakeups[i].triggered:
+        for i in range(len(self.advisors)):
+            if self._can_take(i, queue) and not self.busy[i] and not self._wakeups[i].triggered:
                 self._wakeups[i].succeed()
 
     def _advisor(self, i):
         cfg = self.config
         while True:
             queue = self.assignment[i]
-            call = self._next_call(queue) if queue else None
+            if queue and self.serving[i] not in (None, queue):     # moved to another queue: set up first
+                self.result.switches += 1
+                self.serving[i] = queue
+                yield self.env.timeout(cfg.switch_minutes)
+                continue
+            if queue:
+                self.serving[i] = queue
+            call = self._next_call_for(i, queue) if queue else None
             if call is None:                        # nothing to do: wait for a call or a new assignment
                 self._wakeups[i] = self.env.event()
                 yield self._wakeups[i]
                 continue
             self.busy[i] = True
             call.picked.succeed()
+            queue = call.queue                      # with priority, may differ from the assigned queue
             self.waiting[queue] -= 1
             wait = self.env.now - call.arrived
             self.result.answered[queue] += 1
@@ -236,6 +355,15 @@ class CallCenter:
             yield self.env.timeout(duration)
             self.result.busy_minutes += duration
             self.busy[i] = False
+
+    def _next_call_for(self, i, queue):
+        if self.priority and queue == "general":
+            for other in self.advisors[i]:
+                if other != "general":
+                    call = self._next_call(other)
+                    if call is not None:
+                        return call
+        return self._next_call(queue)
 
     def _next_call(self, queue):
         items = self.queues[queue].items
@@ -262,11 +390,20 @@ class CallCenter:
             last_sla=p["within"] / p["offered"] if p["offered"] else 1.0,
             last_abandoned=p["abandoned"],
             calls_next_hour=float(forecast),
+            priority=self.priority,
+            last_calls=dict(p["offered_q"]),
+            expected_calls=self._expected_calls(p["start"], now),
         )
 
-    def _apply(self, wanted: dict):
+    def _expected_calls(self, start: float, end: float) -> dict:
+        """Calls the forecast expected between two moments, per queue (whole minutes)."""
+        expected = sum(self._rate_at(m + 0.5) for m in range(int(start), int(end)))
+        return {q: expected * self.config.call_mix[q] for q in QUEUES}
+
+    def _apply(self, wanted: dict, keep_min_shift: bool = True):
         """Gives each queue the number of advisors asked for, using skills.
-        Busy advisors finish their call first, then switch."""
+        Busy advisors finish their call first, then switch. Advisors called in less
+        than min_shift_minutes ago stay on duty even if the policy asks for fewer."""
         new = [None] * len(self.advisors)
         free = list(range(len(self.advisors)))
         # rarest skills first, so specialists are not used up on general calls
@@ -278,6 +415,19 @@ class CallCenter:
             for i in able[:need]:
                 new[i] = queue
                 free.remove(i)
+        now = self.env.now
+        if keep_min_shift:
+            for i in free:
+                since = self.on_since[i]
+                if self.assignment[i] and since is not None and now - since < self.config.min_shift_minutes:
+                    new[i] = self.assignment[i]      # too early to send this advisor home
+        for i in range(len(new)):
+            if new[i] and not self.assignment[i]:
+                self.on_since[i] = now
+            elif not new[i]:
+                self.on_since[i] = None
+                self.serving[i] = None
+        self.priority = bool(wanted.get("priority", False))
         self.assignment = new
         for i, queue in enumerate(new):
             if queue and not self.busy[i] and not self._wakeups[i].triggered:
@@ -285,25 +435,27 @@ class CallCenter:
 
     def _manager(self):
         cfg = self.config
-        while self.env.now < cfg.day_minutes + cfg.overtime_minutes:
+        while self.env.now < self.end_minute:
             closed = self.env.now >= cfg.day_minutes
             wanted = self.policy.decide(self._snapshot())
             if closed:                              # after closing: only finish waiting calls
-                wanted = {q: (wanted.get(q, 0) if self.waiting[q] else 0) for q in QUEUES}
-            self._apply(wanted)
-            self._period = {"waits": {q: [] for q in QUEUES}, "answered": 0, "within": 0, "abandoned": 0, "offered": 0}
-            # paid: advisors assigned to a queue, plus those still finishing a call
+                wanted = {q: (wanted.get(q, 0) if self.waiting[q] else 0) for q in QUEUES} | {
+                    "priority": wanted.get("priority", False)}
+            self._apply(wanted, keep_min_shift=not closed)
+            self._period = {"waits": {q: [] for q in QUEUES}, "answered": 0, "within": 0, "abandoned": 0, "offered": 0,
+                        "offered_q": {q: 0 for q in QUEUES}, "start": self.env.now}
+            # paid for the coming period: advisors assigned to a queue, plus those still finishing a call
             on_duty = sum(1 for a, b in zip(self.assignment, self.busy) if a or b)
-            start = self.env.now
+            minutes = min(cfg.decision_minutes, self.end_minute - self.env.now)
+            self.result.on_duty_minutes += on_duty * minutes
+            self.result.staff_cost += on_duty * minutes / 60 * cfg.cost_per_advisor_hour
             yield self.env.timeout(cfg.decision_minutes)
-            self.result.on_duty_minutes += on_duty * (self.env.now - start)
-            self.result.staff_cost += on_duty * (self.env.now - start) / 60 * cfg.cost_per_advisor_hour
 
 
-def simulate_days(policy: Policy, seeds, config: CenterConfig | None = None) -> dict:
+def simulate_days(policy: Policy, seeds, config: CenterConfig | None = None, scenario: str = "normal") -> dict:
     """Runs several days and averages the main KPIs (used to compare policies fairly)."""
     keys = ("abandonment_rate", "sla", "avg_wait_s", "occupancy", "staff_cost_eur", "satisfaction")
-    runs = [CallCenter(policy, seed=s, config=config).run().kpis() for s in seeds]
+    runs = [CallCenter(policy, seed=s, config=config, scenario=scenario).run().kpis() for s in seeds]
     return {k: round(sum(r[k] for r in runs) / len(runs), 4) for k in keys} | {"days": len(runs)}
 
 

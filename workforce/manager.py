@@ -4,6 +4,9 @@ This file has the policies that decide how many advisors work on each queue:
 - FixedRulePolicy: the classic baseline. A staffing plan computed in advance,
   hour by hour, with the Erlang C formula that real call centers use. It never
   reacts to what happens during the day.
+- MarginRulePolicy: the same plan, plus a fixed safety margin of advisors, priority on.
+- ReactiveRulePolicy: the same plan, plus extra advisors when a queue builds up, and
+  multi-skilled advisors serve specialist queues first when customers wait there.
 - (next step) the RL agent, trained with Stable-Baselines3 on the same simulation.
   Both are compared on the same days with workforce.simulation.simulate_days().
 """
@@ -64,6 +67,41 @@ class FixedRulePolicy(Policy):
     def decide(self, snapshot: Snapshot) -> dict:
         hour = min(int(snapshot.minute // 60), len(self.plan) - 1)
         return dict(self.plan[hour])
+
+
+class ReactiveRulePolicy(FixedRulePolicy):
+    """A supervisor's simple reflex: follow the Erlang C plan, and call in extra
+    advisors when customers pile up in a queue. A fairer opponent for the RL agent,
+    because it also reacts to what happens during the day."""
+
+    # tuned on training days (not the test days): 1 extra advisor per waiting customer, at most 5;
+    # turning priority on made this rule slightly worse, so it is off by default
+    def __init__(self, config: CenterConfig | None = None, per_waiting: int = 1, max_extra: int = 5,
+                 use_priority: bool = False):
+        super().__init__(config)
+        self.per_waiting, self.max_extra, self.use_priority = per_waiting, max_extra, use_priority
+
+    def decide(self, snapshot: Snapshot) -> dict:
+        plan = super().decide(snapshot)
+        wanted = {q: plan[q] + min(self.max_extra, snapshot.waiting[q] // self.per_waiting) for q in QUEUES}
+        # specialists on general calls help when technical or complaint customers are waiting
+        wanted["priority"] = self.use_priority and (snapshot.waiting["technical"] + snapshot.waiting["complaint"]) > 0
+        return wanted
+
+
+class MarginRulePolicy(FixedRulePolicy):
+    """The Erlang C plan plus a fixed safety margin per queue, with priority on.
+    A strong, simple opponent: it was found by looking at what the first RL agent
+    actually did (see README). Margin tuned on random training days."""
+
+    def __init__(self, config: CenterConfig | None = None, margin: dict | None = None, priority: bool = True):
+        super().__init__(config)
+        self.margin = margin or {"general": 4, "technical": 0, "complaint": 0}
+        self.priority = priority
+
+    def decide(self, snapshot: Snapshot) -> dict:
+        plan = super().decide(snapshot)
+        return {q: plan[q] + self.margin[q] for q in QUEUES} | {"priority": self.priority}
 
 
 class FixedStaffPolicy(Policy):

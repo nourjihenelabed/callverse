@@ -21,6 +21,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+rl = ["gymnasium>=1.0", "stable-baselines3>=2.3", "plotly>=5.0"]
 
 [tool.setuptools.packages.find]
 include = ["callverse*", "workforce*"]
