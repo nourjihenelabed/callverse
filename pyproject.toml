@@ -22,6 +22,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 rl = ["gymnasium>=1.0", "stable-baselines3>=2.3", "plotly>=5.0"]
+rag = ["chromadb>=1.0"]          # the rules search; optional because it is a big install
 
 [tool.setuptools.packages.find]
 include = ["callverse*", "workforce*"]
