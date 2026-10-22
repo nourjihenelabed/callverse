@@ -18,3 +18,6 @@ data/index/
 .vscode/
 .idea/
 .DS_Store
+
+# Trained RL agents and comparison results (rebuild them with python -m workforce.train)
+workforce/models/

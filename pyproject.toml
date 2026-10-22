@@ -16,14 +16,16 @@ dependencies = [
     "pydantic>=2.0",
     "langgraph>=1.0",
     "langchain-ollama>=1.0",
+    "simpy>=4.1",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+rl = ["gymnasium>=1.0", "stable-baselines3>=2.3", "plotly>=5.0"]
 rag = ["chromadb>=1.0"]          # the rules search; optional because it is a big install
 
 [tool.setuptools.packages.find]
-include = ["callverse*"]
+include = ["callverse*", "workforce*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
