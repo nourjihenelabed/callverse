@@ -11,15 +11,17 @@ One simulated day:
 
 No AI model and no database here: call durations and patience come from
 statistics, so thousands of days can be simulated quickly for RL training.
-The numbers in CenterConfig are PLACEHOLDERS, to calibrate later on public
-call center data (Technion) and on statistics from real LangGraph calls.
+The statistical defaults in CenterConfig are calibrated from published
+Technion bank call-center results. The JSON file records their sources.
 
 Try it:  python -m workforce.simulation
 """
 
+import json
 import math
 import random
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import simpy
 
@@ -75,17 +77,14 @@ class CenterConfig:
     # calls per hour, all queues together, from open_hour to close_hour
     calls_per_hour: tuple = (60, 90, 120, 110, 85, 80, 105, 115, 95, 80, 65, 45)
     call_mix: dict = field(default_factory=lambda: {"general": 0.55, "technical": 0.30, "complaint": 0.15})
-    mean_handle_minutes: dict = field(default_factory=lambda: {"general": 5.0, "technical": 9.0, "complaint": 12.0})
-    handle_spread: float = 0.6                 # log-normal spread of call durations
-    mean_patience_minutes: dict = field(default_factory=lambda: {"general": 3.0, "technical": 4.0, "complaint": 5.0})
+    mean_handle_minutes: dict | None = None
+    handle_spread: float | None = None         # log-normal spread of call durations
+    handle_spread_by_queue: dict | None = None
+    mean_patience_minutes: dict | None = None
+    forecast_error: float | None = None        # maximum +/- error per 15-minute period
     # the advisors on the roster: (how many, which queues they can work on)
-    # 30 advisors can be called in; the Erlang C plan never needs more than 24,
-    # the others are on call for surprise peaks (paid only when on duty)
-    roster: tuple = (
-        (9, ("general",)),
-        (12, ("general", "technical")),
-        (9, ("general", "complaint")),
-    )
+    # The calibrated roster is resized to keep the same staffing proportion.
+    roster: tuple | None = None
     decision_minutes: int = 15                 # how often the policy decides
     min_shift_minutes: int = 60                # an advisor called in stays on duty at least this long
     switch_minutes: float = 2.0                # time to set up when moving to another queue (paid, no calls)
@@ -93,6 +92,46 @@ class CenterConfig:
     sla_target: float = 0.80                   # ...for 80% of calls
     cost_per_advisor_hour: float = 25.0        # euros, for each advisor on duty
     overtime_minutes: int = 60                 # advisors finish waiting calls after closing
+
+    def __post_init__(self):
+        """Load Phase 1 values while retaining explicit custom values and fallbacks."""
+        defaults = {
+            "mean_handle_minutes": {"general": 5.0, "technical": 9.0, "complaint": 12.0},
+            "handle_spread": 0.6,
+            "handle_spread_by_queue": {"general": 0.6, "technical": 0.6, "complaint": 0.6},
+            "mean_patience_minutes": {"general": 3.0, "technical": 4.0, "complaint": 5.0},
+            "forecast_error": 0.0,
+            "roster": ((9, ("general",)), (12, ("general", "technical")),
+                       (9, ("general", "complaint"))),
+        }
+        path = Path(__file__).with_name("calibration.json")
+        if path.exists():
+            with path.open(encoding="utf-8") as file:
+                calibration = json.load(file)
+            service = calibration["service"]
+            explicit_spread = self.handle_spread
+            self.mean_handle_minutes = self.mean_handle_minutes or {
+                queue: service[queue]["mean_minutes"] for queue in QUEUES
+            }
+            self.handle_spread = self.handle_spread if self.handle_spread is not None else service["general"]["spread"]
+            self.handle_spread_by_queue = self.handle_spread_by_queue or {
+                queue: explicit_spread if explicit_spread is not None else service[queue]["spread"]
+                for queue in QUEUES
+            }
+            self.mean_patience_minutes = self.mean_patience_minutes or dict(calibration["patience"]["minutes"])
+            forecast_error = calibration["forecast_error"]
+            self.forecast_error = (self.forecast_error if self.forecast_error is not None
+                                   else forecast_error["maximum"])
+            roster = calibration["roster"]
+            self.roster = self.roster or (
+                (roster["general_only"], ("general",)),
+                (roster["general_technical"], ("general", "technical")),
+                (roster["general_complaint"], ("general", "complaint")),
+            )
+        else:
+            for name, value in defaults.items():
+                if getattr(self, name) is None:
+                    setattr(self, name, value.copy() if isinstance(value, dict) else value)
 
     @property
     def day_minutes(self) -> int:
@@ -206,6 +245,12 @@ class CallCenter:
         self._drop_rng = random.Random(seed * 1000 + 999)   # own random numbers for quiet periods
         self.seed = seed
         self.rng = random.Random(seed)
+        forecast_rng = random.Random(seed * 1000 + 997)
+        periods = math.ceil(self.config.day_minutes / self.config.decision_minutes)
+        error = self.config.forecast_error
+        self._forecast_factors = [
+            forecast_rng.uniform(1 - error, 1 + error) for _ in range(periods)
+        ]
         self.env = simpy.Environment()
         self.queues = {q: simpy.Store(self.env) for q in QUEUES}
         self.advisors = [skills for count, skills in self.config.roster for _ in range(count)]
@@ -256,12 +301,15 @@ class CallCenter:
         return rates[hour] / 60 if 0 <= hour < len(rates) else 0.0
 
     def _arrivals(self):
-        cfg, peak = self.config, max(self.config.calls_per_hour) / 60
+        cfg = self.config
+        peak = max(self.config.calls_per_hour) * (1 + cfg.forecast_error) / 60
         while True:                                 # thinning: arrival rate changes with the hour
             yield self.env.timeout(self.rng.expovariate(peak))
             if self.env.now >= cfg.day_minutes:
                 return
-            if self.rng.random() < self._rate_at(self.env.now) / peak:
+            period = min(int(self.env.now // cfg.decision_minutes), len(self._forecast_factors) - 1)
+            rate = self._rate_at(self.env.now) * self._forecast_factors[period]
+            if self.rng.random() < rate / peak:
                 queue = self.rng.choices(QUEUES, weights=[cfg.call_mix[q] for q in QUEUES])[0]
                 if self._dropped(queue):            # quieter than forecast: this call never comes
                     continue
@@ -350,7 +398,7 @@ class CallCenter:
             self._period["answered"] += 1
             self.result.satisfaction_total += satisfaction_after(wait)
             mean = cfg.mean_handle_minutes[queue]
-            sigma = cfg.handle_spread
+            sigma = cfg.handle_spread_by_queue[queue]
             duration = self.rng.lognormvariate(math.log(mean) - sigma ** 2 / 2, sigma)
             yield self.env.timeout(duration)
             self.result.busy_minutes += duration

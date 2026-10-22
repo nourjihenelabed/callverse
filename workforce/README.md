@@ -6,7 +6,8 @@ The floor manager decides, every 15 minutes, how many advisors work on each queu
 
 | File | What it does |
 |---|---|
-| `simulation.py` | The simulated call center (SimPy): one day of calls, three queues, 30 advisors with skills (24 planned + 6 on call), customers who hang up, realistic staffing rules, test scenarios, and the KPIs. |
+| `simulation.py` | The simulated call center (SimPy): one day of calls, three queues, 21 calibrated advisors with skills, customers who hang up, realistic staffing rules, test scenarios, and the KPIs. |
+| `calibration.json` | Phase 1 values from Brown et al. (2005), including service times, patience, forecast error, and the resized roster. |
 | `manager.py` | The rules: Erlang C plan, margin rule, reactive rule. |
 | `env.py` | The simulation as a Gymnasium environment, random training days, the reward, and `RLPolicy` to use a trained agent like any rule. |
 | `train.py` | Trains an agent with PPO (Stable-Baselines3). |
@@ -23,11 +24,30 @@ python -m workforce.compare           # the comparison tables (saved to workforc
 python -m workforce.explain           # the XAI charts (workforce/models/explain/*.html)
 ```
 
+## Phase 1 calibration
+
+The simulation is calibrated with the published Brown et al. (2005) analysis of
+the Technion Anonymous Bank data. The traceable values are in
+[`calibration.json`](./calibration.json): regular service averages 179 seconds,
+internet service averages 401 seconds, and both use the published log-normal
+spreads derived from the reported standard deviations. The temporary complaint
+duration uses the longest observed type, as specified by the calibration plan.
+Patience is an exponential mean of 446 seconds, and arrivals receive an
+independent random factor of up to +/-20% in each 15-minute period. The source
+paper pages and table/section references are recorded beside the values.
+
+The roster is resized to 21 advisors (6 general-only, 9 general plus technical,
+and 6 general plus complaint), keeping the Erlang C peak at about 80% of the
+roster. The three PPO agents are retrained with seeds 0, 1, and 2. The current
+comparison is saved in `models/comparison.json`, and the regenerated explanation
+charts are saved in `models/explain/`.
+
 ## The simulated call center
 
 - About 1,050 calls a day (8h–20h), more around 10h and 14h: 55% general, 30% technical, 15% complaints.
-- 30 advisors: 9 general only, 12 general + technical, 9 general + complaint. Paid 25 €/hour when on duty.
-- A customer hangs up if they wait longer than their patience (3 to 5 minutes on average).
+- 21 advisors: 6 general only, 9 general + technical, 6 general + complaint. Paid 25 €/hour when on duty.
+- Service times and patience are calibrated from Brown et al. (2005): 3.0 minutes for regular calls, 6.7 minutes for technical calls, 6.7 minutes for the temporary complaint proxy, and 7.4 minutes average patience.
+- Each 15-minute arrival period varies randomly by up to 20% around the forecast, matching the published forecast-error range.
 - **Realistic staffing rules**, the same for every policy: an advisor called in stays **at least 1 hour**; moving to another queue takes **2 minutes**; a policy can turn on **priority** (multi-skilled advisors on general calls serve waiting technical or complaint calls first).
 
 ## The policies
