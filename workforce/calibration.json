@@ -1,0 +1,45 @@
+{
+  "phase": 1,
+  "source": {
+    "author": "Brown et al. (2005)",
+    "title": "Statistical analysis of a telephone call center: a queueing-science perspective",
+    "dataset": "Technion Anonymous Bank",
+    "paper_url": "https://faculty.wharton.upenn.edu/wp-content/uploads/2012/04/Brown-etal-CCdata.pdf",
+    "note": "Brown et al. (2005), Statistical Analysis of a Telephone Call Center, Interfaces 35(3), 2005."
+  },
+  "service": {
+    "general": {
+      "mean_minutes": 3.0,
+      "spread": 0.87,
+      "source": "Brown et al. (2005), PDF p. 5, Table 1 (Regular service / PS)"
+    },
+    "technical": {
+      "mean_minutes": 6.7,
+      "spread": 0.93,
+      "source": "Brown et al. (2005), PDF p. 5, Table 1 (Internet consulting / IN)"
+    },
+    "complaint": {
+      "mean_minutes": 6.7,
+      "spread": 0.93,
+      "source": "Temporary proxy: Brown et al. (2005), PDF p. 5, Table 1; IN is the longest observed type."
+    }
+  },
+  "patience": {
+    "minutes": {
+      "general": 7.433333,
+      "technical": 7.433333,
+      "complaint": 7.433333
+    },
+    "source": "Brown et al. (2005), PDF pp. 8-9, Sections 5.1-5.3; 446 seconds is the Phase 1 plan's common exponential mean."
+  },
+  "forecast_error": {
+    "maximum": 0.2,
+    "source": "Brown et al. (2005), PDF p. 12, Section 6.4; quarter-hour forecast CV is reported as approximately 0.16-0.25."
+  },
+  "roster": {
+    "general_only": 6,
+    "general_technical": 9,
+    "general_complaint": 6,
+    "source": "Phase 1 plan, p. 3: roster resized so the Erlang C peak uses about 80% of the roster."
+  }
+}

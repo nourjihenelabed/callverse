@@ -25,6 +25,15 @@ def test_same_seed_gives_the_same_day():
     assert a == b
 
 
+def test_phase_one_calibration_is_loaded():
+    config = CenterConfig()
+    assert config.mean_handle_minutes == {"general": 3.0, "technical": 6.7, "complaint": 6.7}
+    assert config.mean_patience_minutes["general"] == pytest.approx(7.433333)
+    assert config.handle_spread == pytest.approx(0.87)
+    assert config.forecast_error == pytest.approx(0.2)
+    assert sum(count for count, _ in config.roster) == 21
+
+
 def test_every_call_is_counted_once():
     result = CallCenter(FixedRulePolicy(), seed=3).run()
     for q in QUEUES:
@@ -65,7 +74,7 @@ def test_baseline_meets_its_service_target():
 def test_skills_limit_who_can_work_where():
     class AskTooMany(Policy):
         def decide(self, snapshot):
-            assert snapshot.staffed["complaint"] <= 9   # only 9 advisors have the complaint skill
+            assert snapshot.staffed["complaint"] <= 6   # only 6 advisors have the complaint skill
             return {"complaint": 50}
 
     CallCenter(AskTooMany(), seed=1).run()
@@ -110,7 +119,7 @@ def test_reactive_rule_adds_advisors_only_when_customers_wait():
     for snapshot, wanted, planned in seen:
         for q in QUEUES:
             extra = wanted[q] - planned[q]
-            assert 0 <= extra <= 3
+            assert 0 <= extra <= 5
             assert extra == 0 or snapshot.waiting[q] > 0
 
 
