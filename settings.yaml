@@ -1,0 +1,13 @@
+# Shared settings. Everyone uses these values. Change them only with team agreement.
+
+llm:
+  model: "TO_DECIDE"        # the exact Ollama model name and tag
+  temperature: 0.2
+
+embeddings:
+  model: "TO_DECIDE"        # the model used to search the company rules
+
+paths:
+  policies: "data/policies"
+  database: "data/generated/callverse.db"
+  index: "data/index"
