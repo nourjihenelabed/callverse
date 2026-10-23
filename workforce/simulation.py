@@ -75,12 +75,13 @@ class CenterConfig:
     open_hour: int = 8
     close_hour: int = 20
     # calls per hour, all queues together, from open_hour to close_hour
-    calls_per_hour: tuple = (60, 90, 120, 110, 85, 80, 105, 115, 95, 80, 65, 45)
+    calls_per_hour: tuple | None = None
     call_mix: dict = field(default_factory=lambda: {"general": 0.55, "technical": 0.30, "complaint": 0.15})
     mean_handle_minutes: dict | None = None
     handle_spread: float | None = None         # log-normal spread of call durations
     handle_spread_by_queue: dict | None = None
     mean_patience_minutes: dict | None = None
+    mean_patience_by_hour: dict | None = None
     forecast_error: float | None = None        # maximum +/- error per 15-minute period
     # the advisors on the roster: (how many, which queues they can work on)
     # The calibrated roster is resized to keep the same staffing proportion.
@@ -96,10 +97,12 @@ class CenterConfig:
     def __post_init__(self):
         """Load Phase 1 values while retaining explicit custom values and fallbacks."""
         defaults = {
+            "calls_per_hour": (60, 90, 120, 110, 85, 80, 105, 115, 95, 80, 65, 45),
             "mean_handle_minutes": {"general": 5.0, "technical": 9.0, "complaint": 12.0},
             "handle_spread": 0.6,
             "handle_spread_by_queue": {"general": 0.6, "technical": 0.6, "complaint": 0.6},
             "mean_patience_minutes": {"general": 3.0, "technical": 4.0, "complaint": 5.0},
+            "mean_patience_by_hour": None,
             "forecast_error": 0.0,
             "roster": ((9, ("general",)), (12, ("general", "technical")),
                        (9, ("general", "complaint"))),
@@ -108,6 +111,9 @@ class CenterConfig:
         if path.exists():
             with path.open(encoding="utf-8") as file:
                 calibration = json.load(file)
+                arrivals = calibration.get("arrivals")
+                if self.calls_per_hour is None and arrivals:
+                    self.calls_per_hour = tuple(arrivals["calls_per_hour"])
             service = calibration["service"]
             explicit_spread = self.handle_spread
             self.mean_handle_minutes = self.mean_handle_minutes or {
@@ -119,6 +125,7 @@ class CenterConfig:
                 for queue in QUEUES
             }
             self.mean_patience_minutes = self.mean_patience_minutes or dict(calibration["patience"]["minutes"])
+            self.mean_patience_by_hour = self.mean_patience_by_hour or calibration["patience"].get("by_hour")
             forecast_error = calibration["forecast_error"]
             self.forecast_error = (self.forecast_error if self.forecast_error is not None
                                    else forecast_error["maximum"])
@@ -132,6 +139,8 @@ class CenterConfig:
             for name, value in defaults.items():
                 if getattr(self, name) is None:
                     setattr(self, name, value.copy() if isinstance(value, dict) else value)
+        if self.calls_per_hour is None:
+            self.calls_per_hour = defaults["calls_per_hour"]
 
     @property
     def day_minutes(self) -> int:
@@ -349,7 +358,11 @@ class CallCenter:
         self.waiting[queue] += 1
         yield self.queues[queue].put(call)
         self._wake(queue)
-        patience = self.rng.expovariate(1 / cfg.mean_patience_minutes[queue])
+        hour = int(cfg.open_hour + self.env.now / 60)
+        patience_mean = (cfg.mean_patience_by_hour.get(str(hour))
+                         if cfg.mean_patience_by_hour else None)
+        patience_mean = patience_mean or cfg.mean_patience_minutes[queue]
+        patience = self.rng.expovariate(1 / patience_mean)
         outcome = yield call.picked | self.env.timeout(patience)
         if call.picked not in outcome:              # hung up before an advisor took the call
             call.abandoned = True

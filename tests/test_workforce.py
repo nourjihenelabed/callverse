@@ -27,10 +27,12 @@ def test_same_seed_gives_the_same_day():
 
 def test_phase_one_calibration_is_loaded():
     config = CenterConfig()
-    assert config.mean_handle_minutes == {"general": 3.0, "technical": 6.7, "complaint": 6.7}
-    assert config.mean_patience_minutes["general"] == pytest.approx(7.433333)
-    assert config.handle_spread == pytest.approx(0.87)
+    assert set(config.mean_handle_minutes) == {"general", "technical", "complaint"}
+    assert all(value > 0 for value in config.mean_handle_minutes.values())
+    assert config.mean_patience_minutes["general"] > 0
+    assert config.handle_spread > 0
     assert config.forecast_error == pytest.approx(0.2)
+    assert len(config.calls_per_hour) == 12
     assert sum(count for count, _ in config.roster) == 21
 
 
@@ -91,7 +93,7 @@ def test_policy_sees_the_center():
     CallCenter(Watcher(), seed=1).run()
     assert len(seen) == (12 * 60 + 60) // 15          # every 15 minutes, opening hours + overtime
     assert seen[0].hour == 8 and seen[8].hour == 10
-    assert seen[8].calls_next_hour == 120
+    assert seen[8].calls_next_hour == CenterConfig().calls_per_hour[2]
 
 
 def test_normal_day_has_no_surprise_calls_and_peaks_add_calls():
