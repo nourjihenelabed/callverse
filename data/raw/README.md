@@ -7,3 +7,7 @@ The downloaded public datasets go in this folder. They are not on GitHub (too bi
 | `WA_Fn-UseC_-Telco-Customer-Churn.csv` (or `Telco-Customer-Churn.csv`) | [Kaggle](https://www.kaggle.com/datasets/blastchar/telco-customer-churn) (free account), or [IBM on GitHub](https://github.com/IBM/telco-customer-churn-on-icp4d/tree/master/data) | `scripts/seed_data.py` |
 
 Only this README is on GitHub. Everything else in `data/raw/` is ignored by Git.
+
+The Phase 2 workforce data comes from the [Technion Anonymous Bank archive](https://see-center.iem.technion.ac.il/databases/AnonymousBank/Data/).
+Download `AnonymousBank.rar`, extract its twelve monthly `*1999.txt` files into
+`data/raw/technion/`, and run `python scripts/calibrate_workforce.py`.
