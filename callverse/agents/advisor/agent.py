@@ -20,6 +20,7 @@ The AI model comes from get_model(), so tests can replace it with a fake one.
 
 import json
 import re
+from difflib import SequenceMatcher
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from pydantic import BaseModel, Field
@@ -32,6 +33,7 @@ from callverse.state import CallState, Message, ToolCall
 
 MAX_TOOL_ROUNDS = 4
 MIN_QUESTION_WORDS = 3
+REPEAT_SIMILARITY = 0.8    # 80% the same words in the same order = the same answer again
 MAX_SENTENCES = 5           # the prompt asks for 4; the code cuts what is beyond 5
 COMPENSATION_WORDS = re.compile(r"compensation|geste commercial|\bun avoir\b|dédommag|indemni|offrir|offert", re.I)
 ESCALATION_ACTION = re.compile(r"transmis à un responsable", re.I)   # rules.ESCALATION_ACTION, said by the reminder
@@ -236,6 +238,24 @@ def missing_products(state: CallState, question: str) -> str:
 
 
 def answer(model, state: CallState) -> tuple[str, list[ToolCall]]:
+    text, calls, messages = first_answer(model, state)
+    if repeats_itself(text, state):
+        # the small model sometimes says the same thing turn after turn: ask once for a new answer
+        retry = model.invoke(messages + [HumanMessage(prompts.DONT_REPEAT)])
+        text = finish(clean(retry.content), state)
+        if repeats_itself(text, state) or looks_like_tool_call(text):
+            text = prompts.NOTHING_MORE
+    return text, calls
+
+
+def repeats_itself(text: str, state: CallState) -> bool:
+    """True when the answer is (almost) one the advisor already gave in this call."""
+    body = text.replace(prompts.CLOSING, "").strip()
+    earlier = [m.content.replace(prompts.CLOSING, "").strip() for m in state.messages if m.role == "advisor"]
+    return any(SequenceMatcher(None, body, old).ratio() >= REPEAT_SIMILARITY for old in earlier)
+
+
+def first_answer(model, state: CallState) -> tuple[str, list[ToolCall], list]:
     tools = {tool.name: tool for tool in build_tools(state.customer_id)}
     with_tools = model.bind_tools(list(tools.values()))
     context, calls = prefetch(state)
@@ -245,7 +265,7 @@ def answer(model, state: CallState) -> tuple[str, list[ToolCall]]:
         reply = text_tool_call(with_tools.invoke(messages), tools)
         messages.append(reply)
         if not reply.tool_calls:
-            return finish(clean(reply.content), state), calls
+            return finish(clean(reply.content), state), calls, messages
         for call in reply.tool_calls:
             args = fix_arguments(call, state)
             calls.append(ToolCall(name=call["name"], arguments=args))
@@ -256,7 +276,7 @@ def answer(model, state: CallState) -> tuple[str, list[ToolCall]]:
     text = clean(reply.content)
     if looks_like_tool_call(text):          # still JSON: never say it to the customer
         text = FALLBACK_ANSWER
-    return finish(text, state), calls
+    return finish(text, state), calls, messages
 
 
 def finish(text: str, state: CallState) -> str:

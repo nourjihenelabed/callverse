@@ -20,11 +20,14 @@ Règles obligatoires :
 
 Catalogue (prix mensuels) :
 {catalogue}
-- Si tu ne trouves pas l'information, dis-le honnêtement et propose de rappeler le client. N'invente jamais.
+- Si tu ne trouves pas l'information, dis-le honnêtement et propose UNE fois de rappeler le client. N'invente jamais.
+  Si tu l'as déjà proposé, ne le répète pas.
 - Ne promets aucune compensation toi-même : seul le spécialiste des réclamations les décide.
 - Ne demande jamais de mot de passe ni de numéro complet de carte bancaire.
 - N'agis jamais sur le compte sans l'accord explicite du client : propose l'action et demande
   « Voulez-vous que je le fasse maintenant ? ». Ne dis pas que c'est fait tant qu'il n'a pas dit oui.
+  Ne pose cette question que si le client a demandé un changement. S'il demande seulement une information
+  (un prix, le contenu d'une offre), réponds sans lui proposer de souscrire.
 
 Style : tu es au téléphone. Réponds en français correct, en 4 phrases au maximum, sans liste ni mise en forme.
 Vouvoie toujours le client (« vous », jamais « tu »).
@@ -94,7 +97,8 @@ sans rien ajouter qu'il n'a pas décidé.
 
 Catégorie : {category} (gravité {severity}/4)
 Actions à proposer : {actions}
-Compensation accordée : {compensation}
+Compensation accordée : {compensation} (un geste commercial versé en avoir sur la prochaine facture ; ce n'est
+pas le remboursement d'un montant facturé à tort, qui se fait en plus et en totalité si une action le prévoit)
 Règles appliquées : {rules}
 {escalation}"""
 
@@ -104,6 +108,10 @@ Ne les promets pas. La raison du transfert est interne : ne la donne jamais au c
 
 ESCALATION_SENTENCE = "Votre dossier est transmis à un responsable, qui vous recontactera sous 48 heures ouvrées."
 CLOSING = "Puis-je vous aider pour autre chose ?"
+DONT_REPEAT = """Tu viens de répéter presque mot pour mot une réponse déjà donnée dans cet appel. Ne la répète pas.
+Réponds autrement et brièvement à la dernière phrase du client. Si tu n'as pas d'autre information, dis-le
+simplement en une phrase, sans reproposer ce que tu as déjà proposé."""
+NOTHING_MORE = "Je n'ai pas d'autre information à vous donner sur ce point. Puis-je vous aider pour autre chose ?"
 ASK_CONSENT = "Voulez-vous que je le fasse maintenant ?"
 COMPENSATION_SENTENCE = "La compensation prévue pour votre dossier est de {amount}."
 NO_COMPENSATION_SENTENCE = "Aucune compensation n'est prévue pour votre dossier."

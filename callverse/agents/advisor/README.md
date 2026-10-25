@@ -24,6 +24,8 @@ The only worker the customer talks to. It runs with the AI model (`llama3.1:8b` 
      is replaced by the decided amount (the model once promised 20 € instead of the decided amount);
    - answers are cut after 5 sentences, and only one question is asked at the end;
    - placeholders ("[Nom]") and stage directions ("(pause)") are removed;
+   - an answer 80% identical to one already given in the call is asked again once; if it repeats again,
+     the advisor says in one sentence that it has no more information (the model once looped 4 times);
    - if the model writes its tool call as text (`{"name": "search_policies", ...}`), the tool is run
      and the customer never hears the JSON. When the specialist has decided, its decision (actions,
    compensation, escalation) is given to the model, which explains exactly that to the customer.
@@ -59,6 +61,6 @@ Box ADSL did not exist. It may not invent discounts or "special offers": only a 
 
 ## Checks
 
-- `pytest tests/test_advisor.py`: 31 tests with a scripted fake model, a temporary SQLite database
+- `pytest tests/test_advisor.py`: 33 tests with a scripted fake model, a temporary SQLite database
   and a fake search model. No Ollama needed.
 - `python scripts/try_advisor.py`: the real model, database and rules search.

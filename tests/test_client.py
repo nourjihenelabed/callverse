@@ -196,3 +196,13 @@ def test_decision_matches_the_words(decision, message, expected):
 
 def test_saying_you_hang_up_is_hanging_up():
     assert agent.consistent("refuse", "Je ne comprends pas. Je vais raccrocher.") == "hang_up"
+
+
+@pytest.mark.parametrize("message", ["D'accord, merci. Je vais attendre votre rappel.", "Non, cela suffira.",
+                                     "D'accord, merci."])
+def test_waiting_for_a_call_back_ends_the_call(message):
+    assert agent.consistent("continue", message) == "accept"
+
+
+def test_stray_braces_are_removed():
+    assert agent.clean("Je paie 69,96 € par mois. }") == "Je paie 69,96 € par mois."

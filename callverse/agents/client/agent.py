@@ -125,7 +125,8 @@ def reply(model, role: str, state: CallState) -> ClientTurn:
     return ClientTurn(decision="accept", message="D'accord, merci. Au revoir.", satisfaction=3)
 
 
-GOODBYE = re.compile(r"au revoir|c'est tout|bonne (journée|soirée)", re.I)
+GOODBYE = re.compile(r"au revoir|c'est tout|bonne (journée|soirée)|(ça|cela) (me )?suffi|j'attends|je vais attendre"
+                     r"|\bmerci[.!]?\s*$", re.I)
 
 
 def consistent(decision: str, message: str) -> str:
@@ -148,7 +149,7 @@ def clean(text: str) -> str:
     """No quotes, role labels ("Client : ...") or placeholders ("mon nom est [votre nom]")."""
     text = re.sub(r",?\s*(je m'appelle|mon nom est|je suis|ici)\s*\[[^\]]*\]", "", text or "", flags=re.I)
     text = re.sub(r"\s*\[[^\]]*\]", "", text)
-    text = text.strip().strip('"«»“” ').strip()
+    text = text.strip().strip('"«»“” {}').strip()
     for label in ("Client :", "Client:", "CLIENT :", "Moi :"):
         if text.startswith(label):
             text = text[len(label):].strip()

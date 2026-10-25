@@ -43,5 +43,5 @@ Plays the person who calls, so whole calls can run on their own. It runs with th
 
 ## Checks
 
-- `pytest tests/test_client.py`: 25 tests with a scripted fake model and a temporary SQLite database.
+- `pytest tests/test_client.py`: 29 tests with a scripted fake model and a temporary SQLite database.
 - `python scripts/try_call.py`: whole calls with the real customer, advisor and complaint specialist.

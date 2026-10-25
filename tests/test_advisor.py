@@ -310,3 +310,23 @@ def test_placeholders_and_stage_directions_are_removed():
 
 def test_no_closing_question_after_another_question():
     assert agent.tidy_answer(f"Quel est le montant exact ? {prompts.CLOSING}") == "Quel est le montant exact ?"
+
+
+def said_before(text: str) -> CallState:
+    return call("Bonjour", "Et alors, quel est le prix ?").model_copy(update={"messages": [
+        Message(role="client", content="Bonjour"), Message(role="advisor", content=text),
+        Message(role="client", content="Et alors, quel est le prix ?")]})
+
+
+def test_a_repeated_answer_is_asked_again_once(monkeypatch):
+    old = "Je suis désolé, je n'ai pas trouvé d'information sur ce coût. Puis-je vous rappeler ?"
+    model = use(monkeypatch, ScriptedModel([old, "Le prix est de 9,99 € par mois."]))
+    text = agent.advisor_node(said_before(old))["messages"][0].content
+    assert text.startswith("Le prix est de 9,99 €")
+    assert prompts.DONT_REPEAT in model.sent[-1][-1].content
+
+
+def test_a_second_repetition_gives_a_short_honest_answer(monkeypatch):
+    old = "Je suis désolé, je n'ai pas trouvé d'information sur ce coût. Puis-je vous rappeler ?"
+    use(monkeypatch, ScriptedModel([old, old]))
+    assert agent.advisor_node(said_before(old))["messages"][0].content == prompts.NOTHING_MORE
