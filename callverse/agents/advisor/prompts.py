@@ -32,7 +32,15 @@ Dossier du client :
 {customer}
 
 Règles trouvées pour la dernière question du client :
-{rules}"""
+{rules}
+{warnings}
+RAPPEL avant de répondre : 4 phrases au maximum, vouvoiement. Propose les actions au conditionnel
+(« je peux suspendre votre ligne ») et demande « Voulez-vous que je le fasse maintenant ? ».
+N'écris jamais « nous allons » ou « c'est fait » avant l'accord du client."""
+
+NO_PRODUCT = """
+ATTENTION : le client n'a pas de {product} sur son compte. N'applique pas la procédure.
+Dis-lui poliment que son compte ne comporte pas de {product}, puis demande de quoi il a besoin."""
 
 UNDERSTAND = """Lis la conversation entre un client et le service client de CallVerse Telecom.
 Décide ce que le client veut dans son DERNIER message.

@@ -19,6 +19,7 @@ from fakes import ScriptedModel, tool_call
 from test_knowledge import WordCountEmbeddings
 from test_seed import fake_rows, seed
 
+REAL_PREFETCH = agent.prefetch   # conftest.py replaces it for the other tests; here we test the real one
 CUSTOMER = "0001-AAAAA"          # fibre, mobile, extra line, security, TV; a churner in the IBM data
 
 
@@ -28,6 +29,7 @@ def no_real_database(monkeypatch):
     def refuse():
         raise RuntimeError("no database in this test")
     monkeypatch.setattr(tools, "get_engine", refuse)
+    monkeypatch.setattr(agent, "prefetch", REAL_PREFETCH)
 
 
 @pytest.fixture
@@ -212,3 +214,31 @@ def test_text_json_fallback_for_understanding():
     state = call("Bonjour")
     assert agent.parse_understanding('Voici : {"intent": "lost_sim", "is_complaint": false}', state).intent == "lost_sim"
     assert agent.parse_understanding("je ne sais pas", state).is_complaint is False
+
+
+def test_customer_without_a_mobile_line_gets_a_warning(monkeypatch, database):
+    model = use(monkeypatch, ScriptedModel(["Votre compte ne comporte pas de ligne mobile."]))
+    state = call("J'ai perdu ma carte SIM, qu'est-ce que je dois faire ?").model_copy(update={"customer_id": "0002-BBBBB"})
+    agent.advisor_node(state)                                # 0002-BBBBB has only a Box ADSL
+    assert "n'a pas de ligne mobile" in model.sent[-1][0].content
+
+
+def test_no_warning_when_the_customer_has_the_product_or_asks_a_price(monkeypatch, database):
+    model = use(monkeypatch, ScriptedModel(["a", "b"]))
+    agent.advisor_node(call("J'ai perdu ma carte SIM"))          # 0001-AAAAA has a mobile line
+    agent.advisor_node(call("Combien coûte un forfait mobile ?").model_copy(update={"customer_id": "0002-BBBBB"}))
+    assert all("ATTENTION" not in sent[0].content for sent in model.sent if isinstance(sent, list))
+
+
+def test_tool_call_written_as_text_is_run_not_said(monkeypatch, rules):
+    as_text = '{"name": "search_policies", "parameters": {"question": "Combien je paie par mois ?"}}'
+    model = use(monkeypatch, ScriptedModel([as_text, "Vous payez 71,95 €."]))
+    update = agent.advisor_node(call("Combien je paie par mois ?"))
+    assert update["messages"][0].content == "Vous payez 71,95 €."      # the JSON never reaches the customer
+    assert update["tools_used"][-1].arguments == {"question": "Combien je paie par mois ?"}
+    assert isinstance(model.sent[-1][-1], ToolMessage)
+
+
+def test_ordinary_text_starting_with_a_brace_is_kept():
+    reply = agent.AIMessage('{"note": "pas un outil"}')
+    assert agent.text_tool_call(reply, {"search_policies": None}) is reply

@@ -57,6 +57,13 @@ def policy_search(question: str) -> str:
     return "\n\n".join(f"[{h['source']} > {h['section']}]\n{h['text']}" for h in hits)
 
 
+def product_codes(customer_id: str) -> list[str]:
+    with get_engine().connect() as conn:
+        return list(conn.execute(
+            select(customer_products.c.product_code).where(customer_products.c.customer_id == customer_id)
+        ).scalars().all())
+
+
 def customer_file(customer_id: str) -> str:
     with get_engine().connect() as conn:
         row = conn.execute(
@@ -67,9 +74,7 @@ def customer_file(customer_id: str) -> str:
         ).first()
         if row is None:
             return f"Aucun client trouvé avec l'identifiant {customer_id}."
-        codes = conn.execute(
-            select(customer_products.c.product_code).where(customer_products.c.customer_id == customer_id)
-        ).scalars().all()
+    codes = product_codes(customer_id)
     names = catalogue()
     products = [f"{names[c][0]} ({euros(names[c][1])}/mois)" if c in names else c for c in codes]
     return json.dumps({
@@ -79,6 +84,8 @@ def customer_file(customer_id: str) -> str:
         "moyen_de_paiement": PAYMENTS.get(row.payment_method, row.payment_method),
         "facture_electronique": bool(row.paperless_billing),
         "offres": products,
+        "ligne_mobile": "oui" if "forfait_mobile" in codes else "non",
+        "box_internet": next((names[c][0] for c in codes if c.startswith("box_") and c in names), "aucune"),
         "facture_mensuelle": euros(row.monthly_charge_cents),
         "total_paye_depuis_le_debut": euros(row.total_charge_cents),
     }, ensure_ascii=False)

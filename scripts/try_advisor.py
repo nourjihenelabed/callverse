@@ -9,6 +9,8 @@ Run it from the project folder, with Ollama running, the database filled
     python scripts/try_advisor.py --customer 7590-VHVEG "Combien je paie par mois ?"
 
 For each message it shows what the advisor understood, the tools it used and its answer.
+A complaint goes to the complaint specialist first, as in a real call. Note: the specialist
+opens a real ticket in your database for it.
 """
 
 import argparse
@@ -19,6 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from callverse.agents.advisor.agent import advisor_node  # noqa: E402
+from callverse.agents.complaint.steps import complaint_node  # noqa: E402
 from callverse.state import CallState, Message  # noqa: E402
 
 DEFAULT_CUSTOMER = "7590-VHVEG"     # the first customer of the IBM file
@@ -30,24 +33,40 @@ QUESTIONS = [
 ]
 
 
+def merge(state: CallState, update: dict) -> CallState:
+    """Apply a worker's update, like the graph does (messages and tools_used are added)."""
+    data = state.model_dump()
+    for key, value in update.items():
+        if key in ("messages", "tools_used"):
+            data[key] = data[key] + [v.model_dump() for v in value]
+        else:
+            data[key] = value.model_dump() if hasattr(value, "model_dump") else value
+    return CallState.model_validate(data)
+
+
 def one_turn(state: CallState) -> CallState:
     start = time.time()
     update = advisor_node(state)
-    seconds = time.time() - start
-
     print(f"  understood: intent={update.get('intent', state.intent)}  "
-          f"complaint={update.get('is_complaint', state.is_complaint)}   ({seconds:.0f} s)")
+          f"complaint={update.get('is_complaint', state.is_complaint)}   ({time.time() - start:.0f} s)")
+    state = merge(state, update)
+
+    if state.is_complaint and state.complaint_result is None and not update.get("messages"):
+        start = time.time()
+        state = merge(state, complaint_node(state))
+        r = state.complaint_result
+        print(f"  COMPLAINT SPECIALIST ({time.time() - start:.0f} s): {r.category}, severity {r.severity}, "
+              f"compensation {r.compensation_cents / 100:.2f} EUR, escalate={r.escalate} {r.escalation_reasons}")
+        print(f"    actions: {r.actions}")
+        print(f"    rules: {r.rules_cited}   ticket: {r.ticket_id}")
+        update = advisor_node(state)
+        state = merge(state, update)
+
     for call in update.get("tools_used", []):
         print(f"  tool: {call.name}({call.arguments})")
     if update.get("messages"):
         print(f"  ADVISOR: {update['messages'][0].content}")
-    elif update.get("is_complaint"):
-        print("  -> sent to the complaint specialist (step 4 of the plan, not built yet)")
-
-    data = state.model_dump()
-    for key, value in update.items():
-        data[key] = data[key] + [v.model_dump() for v in value] if key in ("messages", "tools_used") else value
-    return CallState.model_validate(data)
+    return state
 
 
 def new_call(customer: str, text: str) -> CallState:

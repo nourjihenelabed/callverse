@@ -12,7 +12,12 @@ The only worker the customer talks to. It runs with the AI model (`llama3.1:8b` 
    customer's own words, and puts both in the model's instructions. A small model like llama3.1:8b
    often forgets a tool or writes a bad search (it once searched for just "J" from "J'ai perdu..."),
    so it starts with what it needs. Then the model answers in French, in at most 4 sentences. It may
-   still search again, up to 4 times; a search of fewer than 3 words is replaced by the customer's words. When the specialist has decided, its decision (actions,
+   still search again, up to 4 times; a search of fewer than 3 words is replaced by the customer's words.
+   Two more checks are done by code, because the small model skips them:
+   - if the customer talks about a SIM, a mobile line or a box they don't have, an explicit warning
+     is added ("le client n'a pas de ligne mobile") so it doesn't recite the procedure;
+   - if the model writes its tool call as text (`{"name": "search_policies", ...}`), the tool is run
+     and the customer never hears the JSON. When the specialist has decided, its decision (actions,
    compensation, escalation) is given to the model, which explains exactly that to the customer.
 
 ## Tools
@@ -43,6 +48,6 @@ They never read `churned` (the real answer, kept for evaluation) nor `churn_risk
 
 ## Checks
 
-- `pytest tests/test_advisor.py`: 18 tests with a scripted fake model, a temporary SQLite database
+- `pytest tests/test_advisor.py`: 22 tests with a scripted fake model, a temporary SQLite database
   and a fake search model. No Ollama needed.
 - `python scripts/try_advisor.py`: the real model, database and rules search.

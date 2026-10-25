@@ -25,12 +25,17 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from pydantic import BaseModel, Field
 
 from callverse.agents.advisor import prompts
-from callverse.agents.advisor.tools import build_tools, customer_file, euros, policy_search
+from callverse.agents.advisor.tools import build_tools, customer_file, euros, policy_search, product_codes
 from callverse.llm import get_llm
 from callverse.state import CallState, Message, ToolCall
 
 MAX_TOOL_ROUNDS = 4
 MIN_QUESTION_WORDS = 3
+# words in the customer's message -> the product it needs (the product codes of catalogue.md)
+NEEDS_PRODUCT = [
+    (re.compile(r"\bsim\b|ligne mobile|forfait mobile|portable|\bmobile\b", re.I), "forfait_mobile", "ligne mobile"),
+    (re.compile(r"\bbox\b|internet|fibre|adsl|wifi|wi-fi", re.I), "box_", "box internet"),
+]
 FALLBACK_ANSWER = ("Je suis désolé, je n'ai pas pu trouver cette information. "
                    "Je vous propose de vous rappeler dès que j'ai la réponse. Puis-je vous aider pour autre chose ?")
 
@@ -142,7 +147,20 @@ def prefetch(state: CallState) -> tuple[str, list[ToolCall]]:
         rules = f"Recherche indisponible ({error})."
     calls = [ToolCall(name="get_customer", arguments={}),
              ToolCall(name="search_policies", arguments={"question": question})]
-    return prompts.CONTEXT.format(customer=customer, rules=rules), calls
+    return prompts.CONTEXT.format(customer=customer, rules=rules, warnings=missing_products(state, question)), calls
+
+
+def missing_products(state: CallState, question: str) -> str:
+    """A warning when the customer asks about a product they do not have (checked by code, not the model).
+    Not for offer questions ("combien coûte la Box Fibre ?"): anyone may ask about an offer."""
+    if re.search(r"co[uû]te|prix|tarif|souscrire|offre", question, re.I):
+        return ""
+    try:
+        codes = product_codes(state.customer_id)
+    except Exception:               # no database: no warning
+        return ""
+    return "".join(prompts.NO_PRODUCT.format(product=label) for pattern, code, label in NEEDS_PRODUCT
+                   if pattern.search(question) and not any(c.startswith(code) for c in codes))
 
 
 def answer(model, state: CallState) -> tuple[str, list[ToolCall]]:
@@ -152,7 +170,7 @@ def answer(model, state: CallState) -> tuple[str, list[ToolCall]]:
     messages = [SystemMessage(system_prompt(state) + context), *history(state)]
 
     for _ in range(MAX_TOOL_ROUNDS):
-        reply = with_tools.invoke(messages)
+        reply = text_tool_call(with_tools.invoke(messages), tools)
         messages.append(reply)
         if not reply.tool_calls:
             return clean(reply.content), calls
@@ -164,6 +182,22 @@ def answer(model, state: CallState) -> tuple[str, list[ToolCall]]:
     # too many searches: answer now with what was found
     reply = model.invoke(messages + [HumanMessage(prompts.FORCE_ANSWER)])
     return clean(reply.content), calls
+
+
+def text_tool_call(reply: AIMessage, tools: dict) -> AIMessage:
+    """Llama 3.1 sometimes writes its tool call as text: {"name": "search_policies", "parameters": {...}}.
+    Turn that text into a real tool call, so the customer never hears JSON."""
+    text = reply.content if isinstance(reply.content, str) else ""
+    if reply.tool_calls or not text.strip().startswith("{"):
+        return reply
+    try:
+        data = json.loads(text.strip())
+    except ValueError:
+        return reply
+    if not isinstance(data, dict) or data.get("name") not in tools:
+        return reply
+    args = data.get("parameters") or data.get("arguments") or {}
+    return AIMessage(content="", tool_calls=[{"name": data["name"], "args": args, "id": f"text-{data['name']}"}])
 
 
 def fix_arguments(call: dict, state: CallState) -> dict:
