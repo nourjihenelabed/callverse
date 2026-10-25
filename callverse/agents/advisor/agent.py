@@ -31,7 +31,7 @@ from callverse.state import CallState, Message, ToolCall
 
 MAX_TOOL_ROUNDS = 4
 FALLBACK_ANSWER = ("Je suis désolé, je n'ai pas pu trouver cette information. "
-                   "Je vous propose de vous rappeler dès que j'ai la réponse. Puis-je faire autre chose pour vous ?")
+                   "Je vous propose de vous rappeler dès que j'ai la réponse. Puis-je vous aider pour autre chose ?")
 
 
 class Understanding(BaseModel):
