@@ -111,5 +111,21 @@
       "complaint": 5
     },
     "source": "Sized so the Erlang C plan uses at most 80% of the roster at its busiest hour, per skill (calls_per_hour, call_mix and service times of this file)."
+  },
+  "rules": {
+    "reactive": {
+      "per_waiting": 1,
+      "max_extra": 5,
+      "use_priority": false
+    },
+    "margin": {
+      "margin": {
+        "general": 4,
+        "technical": 1,
+        "complaint": 0
+      },
+      "priority": true
+    },
+    "source": "Cheapest settings on 40 random training days (seed 123), written by python -m workforce.tune_rules."
   }
 }
