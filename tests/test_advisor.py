@@ -1,0 +1,179 @@
+"""Checks the advisor (callverse/agents/advisor).
+
+No Ollama and no PostgreSQL needed: a scripted fake model replaces the AI model,
+a temporary SQLite file replaces the database, and a word-counting embedding
+replaces the search model.
+"""
+
+import json
+
+import pytest
+from langchain_core.messages import SystemMessage, ToolMessage
+from sqlalchemy import create_engine
+
+from callverse import knowledge
+from callverse.agents.advisor import agent, tools
+from callverse.config import load_settings
+from callverse.state import CallState, ComplaintResult, Message
+from fakes import ScriptedModel, tool_call
+from test_knowledge import WordCountEmbeddings
+from test_seed import fake_rows, seed
+
+CUSTOMER = "0001-AAAAA"          # fibre, mobile, extra line, security, TV; a churner in the IBM data
+
+
+@pytest.fixture
+def database(tmp_path, monkeypatch):
+    rows, products = seed.build_customers(fake_rows())
+    complaint_rows, ticket_rows = seed.build_complaints(rows, seed=1)
+    engine = create_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    seed.write_all(engine, rows, products, complaint_rows, ticket_rows)
+    monkeypatch.setattr(tools, "get_engine", lambda: engine)
+    return complaint_rows
+
+
+@pytest.fixture
+def rules(tmp_path, monkeypatch):
+    monkeypatch.setitem(load_settings()["rag"], "store", "local")
+    fake = WordCountEmbeddings()
+    knowledge.build_index(embeddings=fake, index_dir=tmp_path / "index")
+    real_search = knowledge.search_policies
+    monkeypatch.setattr(knowledge, "search_policies",
+                        lambda q: real_search(q, k=2, embeddings=fake, index_dir=tmp_path / "index"))
+
+
+def use(monkeypatch, model):
+    monkeypatch.setattr(agent, "get_model", lambda: model)
+    return model
+
+
+def call(*client_messages, **fields) -> CallState:
+    return CallState(call_id="t", customer_id=CUSTOMER, persona="calm", call_reason="check_invoice",
+                     messages=[Message(role="client", content=m) for m in client_messages], **fields)
+
+
+# ---------------------------------------------------------------- the tools
+
+def test_customer_file_has_the_offers_and_no_churn_fields(database):
+    file = json.loads(tools.customer_file(CUSTOMER))
+    assert file["facture_mensuelle"] == "71,95 €"           # 34,99 + 14,99 + 9,99 + 3,99 + 7,99
+    assert "Box Fibre (34,99 €/mois)" in file["offres"]
+    assert file["contrat"] == "sans engagement"
+    text = json.dumps(file).lower()
+    assert "churn" not in text and "risk" not in text and "risque" not in text
+
+
+def test_unknown_customer_is_said_plainly(database):
+    assert "Aucun client" in tools.customer_file("9999-ZZZZZ")
+
+
+def test_complaint_history_lists_past_complaints(database):
+    mine = [c for c in database if c["customer_id"] == CUSTOMER]
+    result = tools.complaint_history(CUSTOMER)
+    if mine:
+        assert len(json.loads(result)) == min(len(mine), tools.MAX_COMPLAINTS)
+    else:
+        assert result.startswith("Aucune")
+
+
+def test_catalogue_names_match_the_seed_prices():
+    assert {code: cents for code, (_, cents) in tools.catalogue().items()} == seed.CATALOGUE
+
+
+def test_policy_search_returns_rule_sections(rules):
+    text = tools.policy_search("Combien coûte une nouvelle carte SIM après une perte ?")
+    assert text.startswith("[") and ".md >" in text
+
+
+def test_customer_tools_only_see_the_caller(database):
+    get_customer = {t.name: t for t in tools.build_tools(CUSTOMER)}["get_customer"]
+    file = json.loads(get_customer.invoke({"customer_id": "0002-BBBBB"}))   # the model asks for someone else
+    assert file["identifiant"] == CUSTOMER
+
+
+# ---------------------------------------------------------------- the advisor
+
+def test_complaint_goes_to_the_specialist_first(monkeypatch):
+    model = use(monkeypatch, ScriptedModel(intent="complaint_billing", is_complaint=True))
+    update = agent.advisor_node(call("Ma facture a doublé, c'est inadmissible !"))
+    assert update == {"intent": "complaint_billing", "is_complaint": True}     # no message yet
+    assert "inadmissible" in model.sent[0]
+
+
+def test_question_is_answered_with_a_rule_search(monkeypatch, rules, database):
+    model = use(monkeypatch, ScriptedModel([
+        tool_call("search_policies", question="prix carte SIM"),
+        "Une nouvelle carte SIM coûte 10 euros. Puis-je faire autre chose pour vous ?",
+    ], intent="lost_sim"))
+    update = agent.advisor_node(call("J'ai perdu ma carte SIM, ça coûte combien ?"))
+
+    assert update["intent"] == "lost_sim" and update["is_complaint"] is False
+    assert update["messages"][0].role == "advisor"
+    assert "carte SIM" in update["messages"][0].content
+    assert [(c.name, c.arguments) for c in update["tools_used"]] == [("search_policies", {"question": "prix carte SIM"})]
+    assert set(model.tool_names) == {"search_policies", "get_customer", "get_complaint_history"}
+    second = model.sent[-1]                                  # the model saw the search result
+    assert isinstance(second[-1], ToolMessage) and ".md >" in second[-1].content
+
+
+def test_system_prompt_never_shows_the_churn_risk(monkeypatch, database):
+    model = use(monkeypatch, ScriptedModel([tool_call("get_customer"), "Votre facture est de 71,95 €."]))
+    agent.advisor_node(call("Combien je paie par mois ?"))
+    everything = " ".join(str(m.content) for m in model.sent[-1]).lower()
+    assert "71,95" in everything
+    assert "churn" not in everything and "risque de départ" not in everything
+
+
+def test_intent_is_kept_on_later_turns(monkeypatch):
+    use(monkeypatch, ScriptedModel(["D'accord."], intent="something_else"))
+    update = agent.advisor_node(call("Merci, et pour le mobile ?", intent="check_invoice"))
+    assert "intent" not in update
+
+
+def test_too_many_tool_calls_forces_an_answer(monkeypatch, rules):
+    loops = [tool_call("search_policies", call_id=f"c{i}", question="encore") for i in range(agent.MAX_TOOL_ROUNDS)]
+    use(monkeypatch, ScriptedModel(loops + ["Voici ce que j'ai trouvé."]))
+    update = agent.advisor_node(call("Une question compliquée"))
+    assert len(update["tools_used"]) == agent.MAX_TOOL_ROUNDS
+    assert update["messages"][0].content == "Voici ce que j'ai trouvé."
+
+
+def test_broken_tool_does_not_stop_the_call(monkeypatch):
+    def broken(question):
+        raise RuntimeError("index not built")
+
+    monkeypatch.setattr(knowledge, "search_policies", broken)
+    model = use(monkeypatch, ScriptedModel([tool_call("search_policies", question="x"), tool_call("fly_away"),
+                                            "Je vais vérifier et vous rappeler."]))
+    update = agent.advisor_node(call("Bonjour"))
+    tool_messages = [m for m in model.sent[-1] if isinstance(m, ToolMessage)]
+    assert "Erreur" in tool_messages[0].content and "index not built" in tool_messages[0].content
+    assert "n'existe pas" in tool_messages[1].content
+    assert update["messages"][0].content == "Je vais vérifier et vous rappeler."
+
+
+def test_empty_answer_gets_a_polite_fallback(monkeypatch):
+    use(monkeypatch, ScriptedModel(["   "]))
+    assert agent.advisor_node(call("Bonjour"))["messages"][0].content == agent.FALLBACK_ANSWER
+
+
+def test_specialist_decision_is_given_to_the_model(monkeypatch):
+    model = use(monkeypatch, ScriptedModel(["Nous vous remboursons 15 € et un responsable vous rappellera."]))
+    decided = ComplaintResult(category="billing", severity=3, actions=["Corriger la facture"],
+                              compensation_cents=1500, rules_cited=["compensation_grid.md"],
+                              escalate=True, escalation_reasons=["menace juridique"])
+    state = call("Ma facture a doublé !", intent="complaint_billing", is_complaint=True, complaint_result=decided)
+    update = agent.advisor_node(state)
+
+    system = model.sent[0][0]
+    assert isinstance(system, SystemMessage)
+    for expected in ("Corriger la facture", "15,00 €", "menace juridique", "superviseur"):
+        assert expected in system.content
+    assert "is_complaint" not in update                      # no new routing: the call goes back to the customer
+    assert update["messages"][0].content.startswith("Nous vous remboursons")
+
+
+def test_text_json_fallback_for_understanding():
+    state = call("Bonjour")
+    assert agent.parse_understanding('Voici : {"intent": "lost_sim", "is_complaint": false}', state).intent == "lost_sim"
+    assert agent.parse_understanding("je ne sais pas", state).is_complaint is False

@@ -7,9 +7,17 @@ Run them before every pull request:  pytest
 import pytest
 from pydantic import ValidationError
 
+from callverse.agents.advisor import agent as advisor
 from callverse.agents.client import agent as client
 from callverse.graph import run_call
 from callverse.state import QUALITY_CRITERIA, CallState, ComplaintResult, Message
+from fakes import KeywordModel
+
+
+@pytest.fixture(autouse=True)
+def no_ai_model(monkeypatch):
+    """The advisor gets a fake model: no Ollama needed."""
+    monkeypatch.setattr(advisor, "get_model", lambda: KeywordModel(["Votre facture comprend votre forfait."]))
 
 
 def new_call(call_reason: str) -> CallState:
