@@ -5,9 +5,9 @@ How one advisor turn works:
    last message and decides the intent and whether it is a complaint.
 2. A complaint the specialist has not seen yet: return {"is_complaint": True} with no
    message. The graph sends the call to the specialist, then back here.
-3. Answer: the AI model answers with its tools (search_policies, get_customer,
-   get_complaint_history). It may call tools several times, up to MAX_TOOL_ROUNDS,
-   then it must answer. When the specialist has decided, its decision is given to the
+3. Answer: first the code reads the customer's file and searches the rules with the
+   customer's last message (prefetch). Then the AI model answers, and may still use its
+   tools (search_policies, get_complaint_history) up to MAX_TOOL_ROUNDS times. When the specialist has decided, its decision is given to the
    model so it explains exactly that to the customer.
 
 Input: the CallState. Output: a dict with the fields it changes:
@@ -25,11 +25,12 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from pydantic import BaseModel, Field
 
 from callverse.agents.advisor import prompts
-from callverse.agents.advisor.tools import build_tools, euros
+from callverse.agents.advisor.tools import build_tools, customer_file, euros, policy_search
 from callverse.llm import get_llm
 from callverse.state import CallState, Message, ToolCall
 
 MAX_TOOL_ROUNDS = 4
+MIN_QUESTION_WORDS = 3
 FALLBACK_ANSWER = ("Je suis désolé, je n'ai pas pu trouver cette information. "
                    "Je vous propose de vous rappeler dès que j'ai la réponse. Puis-je vous aider pour autre chose ?")
 
@@ -122,11 +123,33 @@ def system_prompt(state: CallState) -> str:
     return text
 
 
+def last_client_message(state: CallState) -> str:
+    return next((m.content for m in reversed(state.messages) if m.role == "client"), "")
+
+
+def prefetch(state: CallState) -> tuple[str, list[ToolCall]]:
+    """Before the model answers, the code itself reads the customer's file and searches the
+    rules with the customer's own words. A small model often forgets a tool or writes a bad
+    search, so it starts with what it needs; it can still search again with search_policies."""
+    question = last_client_message(state)
+    try:
+        customer = customer_file(state.customer_id)
+    except Exception as error:      # no database: the call goes on
+        customer = f"Dossier indisponible ({error})."
+    try:
+        rules = policy_search(question)
+    except Exception as error:      # no rules index: the call goes on
+        rules = f"Recherche indisponible ({error})."
+    calls = [ToolCall(name="get_customer", arguments={}),
+             ToolCall(name="search_policies", arguments={"question": question})]
+    return prompts.CONTEXT.format(customer=customer, rules=rules), calls
+
+
 def answer(model, state: CallState) -> tuple[str, list[ToolCall]]:
     tools = {tool.name: tool for tool in build_tools(state.customer_id)}
     with_tools = model.bind_tools(list(tools.values()))
-    messages = [SystemMessage(system_prompt(state)), *history(state)]
-    calls = []
+    context, calls = prefetch(state)
+    messages = [SystemMessage(system_prompt(state) + context), *history(state)]
 
     for _ in range(MAX_TOOL_ROUNDS):
         reply = with_tools.invoke(messages)
@@ -134,22 +157,31 @@ def answer(model, state: CallState) -> tuple[str, list[ToolCall]]:
         if not reply.tool_calls:
             return clean(reply.content), calls
         for call in reply.tool_calls:
-            calls.append(ToolCall(name=call["name"], arguments=call.get("args") or {}))
-            messages.append(ToolMessage(run_tool(tools, call), tool_call_id=call.get("id") or call["name"]))
+            args = fix_arguments(call, state)
+            calls.append(ToolCall(name=call["name"], arguments=args))
+            messages.append(ToolMessage(run_tool(tools, call["name"], args), tool_call_id=call.get("id") or call["name"]))
 
     # too many searches: answer now with what was found
     reply = model.invoke(messages + [HumanMessage(prompts.FORCE_ANSWER)])
     return clean(reply.content), calls
 
 
-def run_tool(tools: dict, call: dict) -> str:
-    tool = tools.get(call["name"])
+def fix_arguments(call: dict, state: CallState) -> dict:
+    """A search cut short by the model (for example 'J' from "J'ai perdu...") uses the customer's words."""
+    args = dict(call.get("args") or {})
+    if call["name"] == "search_policies" and len(str(args.get("question", "")).split()) < MIN_QUESTION_WORDS:
+        args["question"] = last_client_message(state)
+    return args
+
+
+def run_tool(tools: dict, name: str, args: dict) -> str:
+    tool = tools.get(name)
     if tool is None:
-        return f"Erreur : l'outil {call['name']} n'existe pas. Outils disponibles : {', '.join(tools)}."
+        return f"Erreur : l'outil {name} n'existe pas. Outils disponibles : {', '.join(tools)}."
     try:
-        return str(tool.invoke(call.get("args") or {}))
+        return str(tool.invoke(args))
     except Exception as error:      # a tool problem must not stop the call
-        return f"Erreur : l'outil {call['name']} n'a pas fonctionné ({error})."
+        return f"Erreur : l'outil {name} n'a pas fonctionné ({error})."
 
 
 def clean(text) -> str:

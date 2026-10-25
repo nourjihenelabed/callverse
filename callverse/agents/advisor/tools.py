@@ -1,10 +1,11 @@
 """Advisor: the tools the AI model can use during a call.
 
 - search_policies(question): the company rules (data/policies), through callverse.knowledge
-- get_customer(): the caller's offers, contract, bill and payment method
 - get_complaint_history(): the caller's past complaints
+- customer_file(): the caller's offers, contract, bill and payment method. Not a model tool:
+  agent.py always reads it before the model answers and puts it in the instructions.
 
-The two customer tools are tied to the caller of this call: the model cannot
+The customer data is tied to the caller of this call: the model cannot
 ask for another customer's file. They never read `churned` (the real answer,
 for evaluation only) nor `churn_risk` (internal, never shown to the customer).
 """
@@ -107,17 +108,13 @@ def complaint_history(customer_id: str) -> str:
 # ---------------------------------------------------------------- the tools given to the model
 
 def build_tools(customer_id: str) -> list[StructuredTool]:
-    """The advisor's tools for one call. The customer tools are bound to the caller."""
+    """The tools the model can call during one call. The complaint history is bound to the caller."""
     return [
         StructuredTool.from_function(
             func=policy_search, name="search_policies",
             description="Cherche dans les règles de CallVerse Telecom (catalogue et prix, contrats, procédures, "
                         "FAQ). À utiliser avant de donner un prix, un délai ou une règle. "
                         "question : la question en français."),
-        StructuredTool.from_function(
-            func=lambda: customer_file(customer_id), name="get_customer",
-            description="Donne le dossier du client qui appelle : ses offres, son contrat, sa facture mensuelle "
-                        "et son moyen de paiement."),
         StructuredTool.from_function(
             func=lambda: complaint_history(customer_id), name="get_complaint_history",
             description="Donne les dernières réclamations du client qui appelle, avec leur statut."),

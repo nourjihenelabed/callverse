@@ -16,8 +16,9 @@ from fakes import KeywordModel
 
 @pytest.fixture(autouse=True)
 def no_ai_model(monkeypatch):
-    """The advisor gets a fake model: no Ollama needed."""
+    """The advisor gets a fake model and reads no database or index: no Ollama, no PostgreSQL."""
     monkeypatch.setattr(advisor, "get_model", lambda: KeywordModel(["Votre facture comprend votre forfait."]))
+    monkeypatch.setattr(advisor, "prefetch", lambda state: ("", []))
 
 
 def new_call(call_reason: str) -> CallState:

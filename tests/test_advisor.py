@@ -22,6 +22,14 @@ from test_seed import fake_rows, seed
 CUSTOMER = "0001-AAAAA"          # fibre, mobile, extra line, security, TV; a churner in the IBM data
 
 
+@pytest.fixture(autouse=True)
+def no_real_database(monkeypatch):
+    """Tests never touch your PostgreSQL. The `database` fixture gives a SQLite one instead."""
+    def refuse():
+        raise RuntimeError("no database in this test")
+    monkeypatch.setattr(tools, "get_engine", refuse)
+
+
 @pytest.fixture
 def database(tmp_path, monkeypatch):
     rows, products = seed.build_customers(fake_rows())
@@ -85,10 +93,10 @@ def test_policy_search_returns_rule_sections(rules):
     assert text.startswith("[") and ".md >" in text
 
 
-def test_customer_tools_only_see_the_caller(database):
-    get_customer = {t.name: t for t in tools.build_tools(CUSTOMER)}["get_customer"]
-    file = json.loads(get_customer.invoke({"customer_id": "0002-BBBBB"}))   # the model asks for someone else
-    assert file["identifiant"] == CUSTOMER
+def test_complaint_history_tool_only_sees_the_caller(database):
+    history = {t.name: t for t in tools.build_tools("0002-BBBBB")}["get_complaint_history"]
+    asked_for_someone_else = history.invoke({"customer_id": CUSTOMER})
+    assert asked_for_someone_else == tools.complaint_history("0002-BBBBB")
 
 
 # ---------------------------------------------------------------- the advisor
@@ -100,24 +108,50 @@ def test_complaint_goes_to_the_specialist_first(monkeypatch):
     assert "inadmissible" in model.sent[0]
 
 
-def test_question_is_answered_with_a_rule_search(monkeypatch, rules, database):
+def test_customer_file_and_rules_are_read_before_the_model_answers(monkeypatch, rules, database):
+    model = use(monkeypatch, ScriptedModel(["Vous payez 71,95 € par mois. Puis-je vous aider pour autre chose ?"]))
+    update = agent.advisor_node(call("J'ai perdu ma carte SIM, ça coûte combien ?"))
+
+    system = model.sent[-1][0].content
+    assert "71,95 €" in system and "Box Fibre" in system                # the customer's file
+    assert ".md >" in system                                            # the rule sections found
+    assert [(c.name, c.arguments) for c in update["tools_used"]] == [
+        ("get_customer", {}), ("search_policies", {"question": "J'ai perdu ma carte SIM, ça coûte combien ?"})]
+
+
+def test_model_can_search_again(monkeypatch, rules, database):
     model = use(monkeypatch, ScriptedModel([
-        tool_call("search_policies", question="prix carte SIM"),
-        "Une nouvelle carte SIM coûte 10 euros. Puis-je faire autre chose pour vous ?",
+        tool_call("search_policies", question="prix nouvelle carte SIM"),
+        "Une nouvelle carte SIM coûte 10 €. Puis-je vous aider pour autre chose ?",
     ], intent="lost_sim"))
     update = agent.advisor_node(call("J'ai perdu ma carte SIM, ça coûte combien ?"))
 
     assert update["intent"] == "lost_sim" and update["is_complaint"] is False
     assert update["messages"][0].role == "advisor"
     assert "carte SIM" in update["messages"][0].content
-    assert [(c.name, c.arguments) for c in update["tools_used"]] == [("search_policies", {"question": "prix carte SIM"})]
-    assert set(model.tool_names) == {"search_policies", "get_customer", "get_complaint_history"}
+    assert update["tools_used"][-1].arguments == {"question": "prix nouvelle carte SIM"}
+    assert set(model.tool_names) == {"search_policies", "get_complaint_history"}
     second = model.sent[-1]                                  # the model saw the search result
     assert isinstance(second[-1], ToolMessage) and ".md >" in second[-1].content
 
 
+def test_search_cut_short_uses_the_customer_words(monkeypatch, rules):
+    use(monkeypatch, ScriptedModel([tool_call("search_policies", question="J"), "D'accord."]))
+    update = agent.advisor_node(call("J'ai perdu ma carte SIM, que dois-je faire ?"))
+    assert update["tools_used"][-1].arguments == {"question": "J'ai perdu ma carte SIM, que dois-je faire ?"}
+
+
+def test_no_database_and_no_index_still_gives_an_answer(monkeypatch):
+    monkeypatch.setattr(knowledge, "search_policies", lambda q: (_ for _ in ()).throw(RuntimeError("no index")))
+    model = use(monkeypatch, ScriptedModel(["Je vais vérifier et vous rappeler."]))
+    update = agent.advisor_node(call("Bonjour"))
+    system = model.sent[-1][0].content
+    assert "Dossier indisponible" in system and "Recherche indisponible" in system
+    assert update["messages"][0].content == "Je vais vérifier et vous rappeler."
+
+
 def test_system_prompt_never_shows_the_churn_risk(monkeypatch, database):
-    model = use(monkeypatch, ScriptedModel([tool_call("get_customer"), "Votre facture est de 71,95 €."]))
+    model = use(monkeypatch, ScriptedModel(["Votre facture est de 71,95 €."]))
     agent.advisor_node(call("Combien je paie par mois ?"))
     everything = " ".join(str(m.content) for m in model.sent[-1]).lower()
     assert "71,95" in everything
@@ -134,7 +168,7 @@ def test_too_many_tool_calls_forces_an_answer(monkeypatch, rules):
     loops = [tool_call("search_policies", call_id=f"c{i}", question="encore") for i in range(agent.MAX_TOOL_ROUNDS)]
     use(monkeypatch, ScriptedModel(loops + ["Voici ce que j'ai trouvé."]))
     update = agent.advisor_node(call("Une question compliquée"))
-    assert len(update["tools_used"]) == agent.MAX_TOOL_ROUNDS
+    assert len(update["tools_used"]) == 2 + agent.MAX_TOOL_ROUNDS          # 2 read before + the model's searches
     assert update["messages"][0].content == "Voici ce que j'ai trouvé."
 
 
@@ -148,6 +182,7 @@ def test_broken_tool_does_not_stop_the_call(monkeypatch):
     update = agent.advisor_node(call("Bonjour"))
     tool_messages = [m for m in model.sent[-1] if isinstance(m, ToolMessage)]
     assert "Erreur" in tool_messages[0].content and "index not built" in tool_messages[0].content
+    assert "Recherche indisponible" in model.sent[-1][0].content
     assert "n'existe pas" in tool_messages[1].content
     assert update["messages"][0].content == "Je vais vérifier et vous rappeler."
 
