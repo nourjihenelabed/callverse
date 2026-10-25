@@ -228,3 +228,12 @@ def test_graph_skips_the_follow_up_on_an_everyday_call(monkeypatch):
     run_call(CallState(call_id="g", customer_id="7590-VHVEG", persona="calm", call_reason="check_invoice"))
 
     assert t.updates == []
+
+
+def test_required_step_is_not_listed_twice_with_another_capital_letter():
+    case = steps.Case()
+    case.category = "billing"
+    case.actions = [rules.REQUIRED_ACTIONS["billing"].capitalize(), "Rembourser le montant"]
+    steps.check_fix(None, case, None)
+    assert [a.casefold() for a in case.actions].count(rules.REQUIRED_ACTIONS["billing"].casefold()) == 1
+    assert steps.RULE_REQUIRED not in case.rules_cited      # the model had already proposed it

@@ -178,9 +178,10 @@ def check_fix(state: CallState, case: Case, tools: Tools) -> None:
     case.compensation_cents, case.over_cap = rules.check_compensation(case.severity, case.compensation_cents)
 
     required = rules.REQUIRED_ACTIONS[case.category]
-    if required not in case.actions:
-        case.actions.insert(0, required)
+    same = [a for a in case.actions if a.casefold() == required.casefold()]   # "Vérifier..." is "vérifier..."
+    if not same:
         case.rules_cited.append(RULE_REQUIRED)
+    case.actions = [required] + [a for a in case.actions if a not in same]
     if case.compensation_cents > 0 and not any(r.startswith("compensation_grid.md") for r in case.rules_cited):
         case.rules_cited.append(RULE_CAPS)
 

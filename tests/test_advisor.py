@@ -12,7 +12,7 @@ from langchain_core.messages import SystemMessage, ToolMessage
 from sqlalchemy import create_engine
 
 from callverse import knowledge
-from callverse.agents.advisor import agent, tools
+from callverse.agents.advisor import agent, prompts, tools
 from callverse.config import load_settings
 from callverse.state import CallState, ComplaintResult, Message
 from fakes import ScriptedModel, tool_call
@@ -194,20 +194,52 @@ def test_empty_answer_gets_a_polite_fallback(monkeypatch):
     assert agent.advisor_node(call("Bonjour"))["messages"][0].content == agent.FALLBACK_ANSWER
 
 
+def decision(escalate: bool) -> ComplaintResult:
+    return ComplaintResult(
+        category="billing", severity=3, compensation_cents=1500, rules_cited=["compensation_grid.md"],
+        actions=["Corriger la facture"] + (["informer le client que son dossier est transmis à un responsable, "
+                                            "qui le recontacte sous 48 heures ouvrées"] if escalate else []),
+        escalate=escalate, escalation_reasons=["risque élevé de résiliation"] if escalate else [])
+
+
+def complaint_call(escalate: bool) -> CallState:
+    return call("Ma facture a doublé !", intent="complaint_billing", is_complaint=True, complaint_result=decision(escalate))
+
+
 def test_specialist_decision_is_given_to_the_model(monkeypatch):
-    model = use(monkeypatch, ScriptedModel(["Nous vous remboursons 15 € et un responsable vous rappellera."]))
-    decided = ComplaintResult(category="billing", severity=3, actions=["Corriger la facture"],
-                              compensation_cents=1500, rules_cited=["compensation_grid.md"],
-                              escalate=True, escalation_reasons=["menace juridique"])
-    state = call("Ma facture a doublé !", intent="complaint_billing", is_complaint=True, complaint_result=decided)
-    update = agent.advisor_node(state)
+    model = use(monkeypatch, ScriptedModel(["Nous corrigeons votre facture et vous remboursons 15 €."]))
+    update = agent.advisor_node(complaint_call(escalate=False))
 
     system = model.sent[0][0]
     assert isinstance(system, SystemMessage)
-    for expected in ("Corriger la facture", "15,00 €", "menace juridique", "superviseur"):
-        assert expected in system.content
+    assert "Corriger la facture" in system.content and "15,00 €" in system.content
+    assert system.content.rstrip().endswith(prompts.COMPLAINT_REMINDER.strip()[-60:])   # the last words it reads
     assert "is_complaint" not in update                      # no new routing: the call goes back to the customer
-    assert update["messages"][0].content.startswith("Nous vous remboursons")
+    assert update["messages"][0].content.startswith("Nous corrigeons")
+
+
+def test_escalated_complaint_promises_nothing_and_hides_the_reason(monkeypatch):
+    model = use(monkeypatch, ScriptedModel(["Je comprends."]))
+    agent.advisor_node(complaint_call(escalate=True))
+    system = model.sent[0][0].content
+    assert "résiliation" not in system                       # the churn risk is internal
+    assert "pistes" in system and "AUCUN remboursement" in system
+
+
+def test_escalation_is_said_even_if_the_model_forgets(monkeypatch):
+    use(monkeypatch, ScriptedModel(["Je comprends votre colère. Puis-je vous aider pour autre chose ?"]))
+    text = agent.advisor_node(complaint_call(escalate=True))["messages"][0].content
+    assert text == ("Je comprends votre colère. " + prompts.ESCALATION_SENTENCE + " " + prompts.CLOSING)
+
+    use(monkeypatch, ScriptedModel(["Un responsable vous rappellera sous 48 heures."]))
+    text = agent.advisor_node(complaint_call(escalate=True))["messages"][0].content
+    assert text == "Un responsable vous rappellera sous 48 heures."            # already said: unchanged
+
+
+def test_tool_call_with_a_bad_escape_is_still_run():
+    as_text = '{"name": "search_policies", "parameters": {"question": "quelles offres j\\\'ai ?"}}'
+    reply = agent.text_tool_call(agent.AIMessage(as_text), {"search_policies": None})
+    assert reply.tool_calls[0]["args"] == {"question": "quelles offres j'ai ?"}
 
 
 def test_text_json_fallback_for_understanding():

@@ -31,6 +31,7 @@ from callverse.state import CallState, Message, ToolCall
 
 MAX_TOOL_ROUNDS = 4
 MIN_QUESTION_WORDS = 3
+ESCALATION_ACTION = re.compile(r"transmis à un responsable", re.I)   # rules.ESCALATION_ACTION, said by the reminder
 # words in the customer's message -> the product it needs (the product codes of catalogue.md)
 NEEDS_PRODUCT = [
     (re.compile(r"\bsim\b|ligne mobile|forfait mobile|portable|\bmobile\b", re.I), "forfait_mobile", "ligne mobile"),
@@ -114,18 +115,33 @@ def system_prompt(state: CallState) -> str:
     text = prompts.SYSTEM.format(customer_id=state.customer_id)
     result = state.complaint_result
     if result is not None:
-        escalation = ""
-        if result.escalate:
-            escalation = prompts.ESCALATION.format(reasons=", ".join(result.escalation_reasons) or "règle interne")
+        actions = [a for a in result.actions if not ESCALATION_ACTION.search(a)]
         text += "\n\n" + prompts.COMPLAINT_RESULT.format(
             category=result.category,
             severity=result.severity,
-            actions="; ".join(result.actions) or "aucune",
+            actions="; ".join(actions) or "aucune",
             compensation=euros(result.compensation_cents) if result.compensation_cents else "aucune",
             rules=", ".join(result.rules_cited) or "aucune",
-            escalation=escalation,
+            escalation=prompts.ESCALATION if result.escalate else "",
         )
     return text
+
+
+def reminder(state: CallState) -> str:
+    """The last instruction before the model answers, chosen by the situation."""
+    if state.complaint_result is None:
+        return prompts.REMINDER
+    return prompts.ESCALATED_REMINDER if state.complaint_result.escalate else prompts.COMPLAINT_REMINDER
+
+
+def tell_escalation(text: str, state: CallState) -> str:
+    """An escalated complaint: the customer must hear it, even if the model forgot to say it."""
+    result = state.complaint_result
+    if result is None or not result.escalate or re.search(r"responsable|superviseur|48 ?h", text, re.I):
+        return text
+    if text.endswith(prompts.CLOSING):
+        return f"{text[:-len(prompts.CLOSING)].rstrip()} {prompts.ESCALATION_SENTENCE} {prompts.CLOSING}"
+    return f"{text} {prompts.ESCALATION_SENTENCE}"
 
 
 def last_client_message(state: CallState) -> str:
@@ -167,13 +183,13 @@ def answer(model, state: CallState) -> tuple[str, list[ToolCall]]:
     tools = {tool.name: tool for tool in build_tools(state.customer_id)}
     with_tools = model.bind_tools(list(tools.values()))
     context, calls = prefetch(state)
-    messages = [SystemMessage(system_prompt(state) + context), *history(state)]
+    messages = [SystemMessage(system_prompt(state) + context + reminder(state)), *history(state)]
 
     for _ in range(MAX_TOOL_ROUNDS):
         reply = text_tool_call(with_tools.invoke(messages), tools)
         messages.append(reply)
         if not reply.tool_calls:
-            return clean(reply.content), calls
+            return tell_escalation(clean(reply.content), state), calls
         for call in reply.tool_calls:
             args = fix_arguments(call, state)
             calls.append(ToolCall(name=call["name"], arguments=args))
@@ -181,20 +197,32 @@ def answer(model, state: CallState) -> tuple[str, list[ToolCall]]:
 
     # too many searches: answer now with what was found
     reply = model.invoke(messages + [HumanMessage(prompts.FORCE_ANSWER)])
-    return clean(reply.content), calls
+    text = clean(reply.content)
+    if looks_like_tool_call(text):          # still JSON: never say it to the customer
+        text = FALLBACK_ANSWER
+    return tell_escalation(text, state), calls
+
+
+def looks_like_tool_call(text: str) -> bool:
+    return bool(re.match(r'\s*\{\s*"name"\s*:', text or ""))
 
 
 def text_tool_call(reply: AIMessage, tools: dict) -> AIMessage:
     """Llama 3.1 sometimes writes its tool call as text: {"name": "search_policies", "parameters": {...}}.
     Turn that text into a real tool call, so the customer never hears JSON."""
     text = reply.content if isinstance(reply.content, str) else ""
-    if reply.tool_calls or not text.strip().startswith("{"):
+    if reply.tool_calls or not looks_like_tool_call(text):
         return reply
     try:
-        data = json.loads(text.strip())
+        data = json.loads(text.strip().replace("\\'", "'"))     # it writes j\'ai, which is not valid JSON
     except ValueError:
-        return reply
-    if not isinstance(data, dict) or data.get("name") not in tools:
+        data = {}
+    if not isinstance(data, dict) or "name" not in data:      # still broken: read the two fields directly
+        name = re.search(r'"name"\s*:\s*"(\w+)"', text)
+        question = re.search(r'"question"\s*:\s*"(.*?)"\s*\}', text, re.S)
+        data = {"name": name.group(1) if name else "",
+                "parameters": {"question": question.group(1).replace("\\'", "'")} if question else {}}
+    if data.get("name") not in tools:
         return reply
     args = data.get("parameters") or data.get("arguments") or {}
     return AIMessage(content="", tool_calls=[{"name": data["name"], "args": args, "id": f"text-{data['name']}"}])
