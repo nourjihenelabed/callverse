@@ -16,6 +16,7 @@ def offline_tools() -> steps.Tools:
         get_history=lambda customer_id, category: steps.History(),
         search=lambda question: [],
         open_ticket=lambda state, result, history: "TCK-TEST",
+        update_ticket=lambda ticket_id, new_state: None,
     )
 
 

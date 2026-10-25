@@ -8,11 +8,15 @@
     6. Decide / escalate ... plain code, no AI
     7. Open ticket ......... writes to the database
 
+After the call, follow_up_node updates the ticket with the customer's answer
+(graph.py runs it once the client has set an outcome).
+
 The AI model only suggests (steps 1 and 4). The money limits and the supervisor
 cases are checked by plain code in rules.py, so a model cannot talk its way past them.
 If the model fails or gives a bad answer, the step falls back to a safe rule-based answer.
 
 Input: the CallState. Output: {"complaint_result": ComplaintResult(...)}
+follow_up_node returns {} : it only writes to the database.
 
 The database, the rules search and the model are reached through a Tools object,
 so tests can swap them for fakes (see tests/conftest.py).
@@ -29,6 +33,10 @@ from callverse.agents.complaint import prompts, rules
 from callverse.state import CallState, ComplaintCategory, ComplaintResult
 
 log = logging.getLogger(__name__)
+
+# the customer's answer -> the new ticket state (complaint_procedures.md, "Suivi des tickets").
+# Not listed (abandoned, escalated): the ticket stays "solution_proposed".
+TICKET_STATE_AFTER_CALL = {"resolved": "accepted", "refused": "refused"}
 
 REOPEN_DAYS = 30                # same problem within 30 days of a resolution: reopen the old ticket
 MAX_DRAFT_ACTIONS = 3            # the model's own actions; required steps are added after
@@ -58,6 +66,7 @@ class Tools:
     get_history: Callable[[str, ComplaintCategory], History]
     search: Callable[[str], list[dict]]
     open_ticket: Callable[[CallState, ComplaintResult, History], str]
+    update_ticket: Callable[[str, str], None]   # (ticket_id, new state)
 
 
 @dataclass
@@ -219,6 +228,25 @@ def complaint_node(state: CallState) -> dict:
     return {"complaint_result": handle_complaint(state, make_tools())}
 
 
+def follow_up(state: CallState, tools: Tools) -> str | None:
+    """After the call: record the customer's answer on the ticket. Returns the new state, or None."""
+    result = state.complaint_result
+    if result is None or result.ticket_id is None:
+        return None
+    # an escalated case waits for the supervisor, even if the customer said "d'accord"
+    if result.escalate:
+        return None
+    new_state = TICKET_STATE_AFTER_CALL.get(state.outcome)
+    if new_state:
+        tools.update_ticket(result.ticket_id, new_state)
+    return new_state
+
+
+def follow_up_node(state: CallState) -> dict:
+    follow_up(state, make_tools())
+    return {}
+
+
 # ---------------------------------------------------------------- the real tools
 
 def make_tools() -> Tools:
@@ -226,7 +254,8 @@ def make_tools() -> Tools:
     from callverse.knowledge import search_policies
     from callverse.llm import get_llm
 
-    return Tools(llm=get_llm(temperature=0), get_history=db_history, search=search_policies, open_ticket=db_open_ticket)
+    return Tools(llm=get_llm(temperature=0), get_history=db_history, search=search_policies,
+                 open_ticket=db_open_ticket, update_ticket=db_update_ticket)
 
 
 def db_history(customer_id: str, category: ComplaintCategory) -> History:
@@ -295,3 +324,13 @@ def db_open_ticket(state: CallState, result: ComplaintResult, history: History) 
             updated_at=now,
         ))
     return ticket_id
+
+
+def db_update_ticket(ticket_id: str, new_state: str) -> None:
+    from sqlalchemy import update
+
+    from callverse.db import get_engine, tickets
+
+    with get_engine().begin() as conn:
+        conn.execute(update(tickets).where(tickets.c.ticket_id == ticket_id)
+                     .values(state=new_state, updated_at=datetime.now()))

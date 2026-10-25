@@ -4,7 +4,8 @@ No Ollama and no database: a fake model gives fixed answers and the history is m
 """
 
 from callverse.agents.complaint import rules, steps
-from callverse.state import CallState, Message
+from callverse.graph import run_call
+from callverse.state import CallState, ComplaintResult, Message
 
 GRID_HIT = {"text": "Grille : 5 € en gravité 2.", "source": "compensation_grid.md",
             "section": "Erreur de facturation (catégorie facturation)", "score": 0.9}
@@ -48,6 +49,7 @@ def tools(model=None, history=None, hits=(GRID_HIT, PROCEDURE_HIT)):
         get_history=lambda customer_id, category: history or steps.History(),
         search=lambda question: list(hits),
         open_ticket=open_ticket,
+        update_ticket=lambda ticket_id, new_state: None,
     )
     t.tickets = tickets
     return t
@@ -169,3 +171,60 @@ def test_a_failing_model_does_not_stop_the_call():
     result = steps.handle_complaint(call(reason="complaint_delivery"), tools(FakeModel(fail=True)))
 
     assert result.category == "delivery" and not result.escalate
+
+
+# ---------------------------------------------------------------- after the call: the ticket follows the answer
+
+def finished(outcome, escalate=False, ticket_id="TCK-000999"):
+    state = call()
+    state.outcome = outcome
+    state.complaint_result = ComplaintResult(category="billing", severity=2, actions=["x"],
+                                             escalate=escalate, ticket_id=ticket_id)
+    return state
+
+
+def recording_tools():
+    t = tools()
+    t.updates = []
+    t.update_ticket = lambda ticket_id, new_state: t.updates.append((ticket_id, new_state))
+    return t
+
+
+def test_accepted_fix_marks_the_ticket_accepted():
+    t = recording_tools()
+    assert steps.follow_up(finished("resolved"), t) == "accepted"
+    assert t.updates == [("TCK-000999", "accepted")]
+
+
+def test_refused_fix_marks_the_ticket_refused():
+    t = recording_tools()
+    steps.follow_up(finished("refused"), t)
+    assert t.updates == [("TCK-000999", "refused")]
+
+
+def test_escalated_or_abandoned_ticket_keeps_waiting():
+    t = recording_tools()
+    steps.follow_up(finished("resolved", escalate=True), t)    # "d'accord" is not the supervisor's decision
+    steps.follow_up(finished("abandoned"), t)
+    steps.follow_up(finished("resolved", ticket_id=None), t)
+    assert t.updates == []
+
+
+def test_graph_runs_the_follow_up_after_a_complaint_call(monkeypatch):
+    t = recording_tools()
+    t.llm = None
+    monkeypatch.setattr(steps, "make_tools", lambda: t)
+
+    done = run_call(CallState(call_id="g", customer_id="7590-VHVEG", persona="calm", call_reason="complaint_billing"))
+
+    assert done.outcome == "resolved" and done.quality_report is not None
+    assert t.updates == [("TCK-000999", "accepted")]
+
+
+def test_graph_skips_the_follow_up_on_an_everyday_call(monkeypatch):
+    t = recording_tools()
+    monkeypatch.setattr(steps, "make_tools", lambda: t)
+
+    run_call(CallState(call_id="g", customer_id="7590-VHVEG", persona="calm", call_reason="check_invoice"))
+
+    assert t.updates == []

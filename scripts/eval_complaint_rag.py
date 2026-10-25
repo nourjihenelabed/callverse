@@ -43,7 +43,7 @@ CASES = [
 
 
 def evaluate(search=search_policies) -> list[dict]:
-    tools = steps.Tools(llm=None, get_history=None, search=search, open_ticket=None)
+    tools = steps.Tools(llm=None, get_history=None, search=search, open_ticket=None, update_ticket=None)
     results = []
     for category, severity, text, expected in CASES:
         state = CallState(call_id="eval", customer_id="eval", persona="dissatisfied",
