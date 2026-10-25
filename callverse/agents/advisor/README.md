@@ -23,6 +23,7 @@ The only worker the customer talks to. It runs with the AI model (`llama3.1:8b` 
    - the specialist's compensation cannot be changed: a sentence about compensation with another amount
      is replaced by the decided amount (the model once promised 20 € instead of the decided amount);
    - answers are cut after 5 sentences, and only one question is asked at the end;
+   - placeholders ("[Nom]") and stage directions ("(pause)") are removed;
    - if the model writes its tool call as text (`{"name": "search_policies", ...}`), the tool is run
      and the customer never hears the JSON. When the specialist has decided, its decision (actions,
    compensation, escalation) is given to the model, which explains exactly that to the customer.
@@ -37,6 +38,9 @@ The only worker the customer talks to. It runs with the AI model (`llama3.1:8b` 
 
 The customer data is tied to the caller: the model cannot read another customer's file.
 They never read `churned` (the real answer, kept for evaluation) nor `churn_risk` (internal).
+
+The whole catalogue (10 offers and prices) is always in the instructions: the model once said the
+Box ADSL did not exist. It may not invent discounts or "special offers": only a manager can.
 
 ## Rules it follows (from `data/policies/agent_guidelines.md`)
 
@@ -55,6 +59,6 @@ They never read `churned` (the real answer, kept for evaluation) nor `churn_risk
 
 ## Checks
 
-- `pytest tests/test_advisor.py`: 28 tests with a scripted fake model, a temporary SQLite database
+- `pytest tests/test_advisor.py`: 31 tests with a scripted fake model, a temporary SQLite database
   and a fake search model. No Ollama needed.
 - `python scripts/try_advisor.py`: the real model, database and rules search.

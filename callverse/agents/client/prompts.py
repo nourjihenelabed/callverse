@@ -20,7 +20,8 @@ Ne donnez ni nom ni numéro : vous êtes déjà identifié. N'écrivez jamais de
 
 OPENING = """{role}
 
-Le conseiller vient de décrocher. Écrivez votre première phrase : saluez-le et expliquez pourquoi vous appelez."""
+Le conseiller vient de décrocher. Écrivez votre première phrase : saluez-le et expliquez précisément
+votre situation tout de suite, avec les montants ou les durées de votre situation s'il y en a."""
 
 REPLY = """{role}
 

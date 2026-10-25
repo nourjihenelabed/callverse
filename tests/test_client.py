@@ -192,3 +192,7 @@ def test_placeholders_and_labels_are_removed():
 ])
 def test_decision_matches_the_words(decision, message, expected):
     assert agent.consistent(decision, message) == expected
+
+
+def test_saying_you_hang_up_is_hanging_up():
+    assert agent.consistent("refuse", "Je ne comprends pas. Je vais raccrocher.") == "hang_up"

@@ -25,7 +25,8 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from pydantic import BaseModel, Field
 
 from callverse.agents.advisor import prompts
-from callverse.agents.advisor.tools import build_tools, customer_file, euros, policy_search, product_codes
+from callverse.agents.advisor.tools import (build_tools, catalogue, customer_file, euros, policy_search,
+                                            product_codes)
 from callverse.llm import get_llm
 from callverse.state import CallState, Message, ToolCall
 
@@ -113,8 +114,16 @@ def history(state: CallState) -> list:
     return [HumanMessage(m.content) if m.role == "client" else AIMessage(m.content) for m in state.messages]
 
 
+def catalogue_text() -> str:
+    """The 10 offers and their prices, always given to the model (it once said the Box ADSL did not exist)."""
+    try:
+        return "\n".join(f"- {name} : {euros(cents)}/mois" for name, cents in catalogue().values())
+    except OSError:
+        return "(catalogue indisponible : utilise search_policies)"
+
+
 def system_prompt(state: CallState) -> str:
-    text = prompts.SYSTEM.format(customer_id=state.customer_id)
+    text = prompts.SYSTEM.format(customer_id=state.customer_id, catalogue=catalogue_text())
     result = state.complaint_result
     if result is not None:
         actions = [a for a in result.actions if not ESCALATION_ACTION.search(a)]
@@ -175,8 +184,8 @@ def tidy_answer(text: str) -> str:
     parts = sentences(text)
     closing = parts[-1] if parts and parts[-1] == prompts.CLOSING else None
     body = [p for p in parts if p != prompts.CLOSING]
-    if any(prompts.ASK_CONSENT in p for p in body):
-        closing = None                      # "Voulez-vous que je le fasse ?" is already the question
+    if any(p.endswith("?") for p in body):
+        closing = None                      # it already asked a question: one at a time
     body = body[:MAX_SENTENCES]
     return " ".join(body + ([closing] if closing else [])) or FALLBACK_ANSWER
 
@@ -301,5 +310,8 @@ def run_tool(tools: dict, name: str, args: dict) -> str:
 def clean(text) -> str:
     if isinstance(text, list):      # some models answer in parts
         text = " ".join(part.get("text", "") if isinstance(part, dict) else str(part) for part in text)
-    text = (text or "").strip()
-    return text or FALLBACK_ANSWER
+    text = re.sub(r",?\s*(je m'appelle|mon nom est|je suis|ici)\s*\[[^\]]*\]", "", text or "", flags=re.I)
+    text = re.sub(r"\s*\[[^\]]*\]", "", text)              # placeholders: "[Nom]"
+    text = re.sub(r"\s*\((pause|silence|un temps|[^)]*vérifi[^)]*)\)", "", text, flags=re.I)  # "(pause)"
+    text = re.sub(r"^\s*,\s*", "", text).strip()
+    return (text[:1].upper() + text[1:]) if text else FALLBACK_ANSWER

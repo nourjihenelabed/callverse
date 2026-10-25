@@ -275,3 +275,15 @@ def test_no_outage_credit_under_48_hours_or_without_a_box():
     assert rules.outage_credit(2, "box_fibre") is None
     assert rules.outage_credit(5, None) is None
     assert rules.outage_credit(5, "box_fibre") == 585
+
+
+@pytest.mark.parametrize("text, floor", [("ma facture est de 75,94 € au lieu de 37,97 €", 2),
+                                         ("120 € au lieu de 40 €", 3), ("une option facturée sans accord", 1)])
+def test_money_in_the_customer_words_sets_a_minimum_severity(text, floor):
+    assert rules.money_severity(text) == floor
+
+
+def test_a_doubled_bill_is_never_severity_1():
+    t = tools(billing_model(cents=0, severity=1))          # the model said "no money lost"
+    result = steps.handle_complaint(call("Ma facture est de 75,94 € au lieu de 37,97 €."), t)
+    assert result.severity == 2

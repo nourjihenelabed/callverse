@@ -129,6 +129,9 @@ def classify(state: CallState, case: Case, tools: Tools) -> None:
 
     # never trust the model alone on a legal threat
     case.legal_threat = case.legal_threat or rules.mentions_legal_threat(_client_text(state))
+    # nor on a money loss: a bill that doubled is not "no money lost" (severity 1)
+    if case.category in ("billing", "termination"):
+        case.severity = max(case.severity, rules.money_severity(_client_text(state)))
 
 
 def check_history(state: CallState, case: Case, tools: Tools) -> None:

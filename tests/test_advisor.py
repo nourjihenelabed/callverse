@@ -294,3 +294,19 @@ def test_long_answers_are_cut_and_only_one_question_is_asked():
     assert agent.tidy_answer(long) == " ".join(f"Phrase {n}." for n in range(1, agent.MAX_SENTENCES + 1)) + " " + prompts.CLOSING
     two = f"Je peux le changer. {prompts.ASK_CONSENT} {prompts.CLOSING}"
     assert agent.tidy_answer(two) == f"Je peux le changer. {prompts.ASK_CONSENT}"
+
+
+def test_the_whole_catalogue_is_always_given():
+    prompt = agent.system_prompt(call("Bonjour"))
+    for name, cents in tools.catalogue().values():
+        assert f"{name} : {tools.euros(cents)}/mois" in prompt
+    assert "offre spéciale" in prompt                                  # no invented loyalty deals
+
+
+def test_placeholders_and_stage_directions_are_removed():
+    assert agent.clean("Je m'appelle [Nom], je suis là pour vous aider. (pause) Oui, c'est bien ainsi.") == \
+        "Je suis là pour vous aider. Oui, c'est bien ainsi."
+
+
+def test_no_closing_question_after_another_question():
+    assert agent.tidy_answer(f"Quel est le montant exact ? {prompts.CLOSING}") == "Quel est le montant exact ?"

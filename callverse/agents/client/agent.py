@@ -125,12 +125,14 @@ def reply(model, role: str, state: CallState) -> ClientTurn:
     return ClientTurn(decision="accept", message="D'accord, merci. Au revoir.", satisfaction=3)
 
 
-GOODBYE = re.compile(r"au revoir|c'est tout|bonne (journée|soirée)|je raccroche", re.I)
+GOODBYE = re.compile(r"au revoir|c'est tout|bonne (journée|soirée)", re.I)
 
 
 def consistent(decision: str, message: str) -> str:
     """The decision must match the words (the small model sometimes says goodbye but picks "continue",
-    or asks two new questions but picks "accept")."""
+    or asks two new questions but picks "accept", or says "je vais raccrocher" but picks "refuse")."""
+    if re.search(r"raccroch", message, re.I):
+        return "hang_up"
     if decision == "continue" and GOODBYE.search(message) and "?" not in message:
         return "accept"
     if decision == "accept" and "?" in message and not GOODBYE.search(message):

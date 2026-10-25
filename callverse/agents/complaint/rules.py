@@ -94,6 +94,15 @@ def outage_credit(days: int | None, box_code: str | None) -> int | None:
     return days * DAILY_OUTAGE_CREDIT_CENTS[box_code]
 
 
+def money_severity(text: str) -> int:
+    """The lowest severity the customer's own numbers allow (complaint_procedures.md): money lost is at
+    least 2, a gap of more than 50 € is 3. "75,94 € au lieu de 37,97 €" -> 2. No amount -> 1."""
+    amounts = [float(a.replace(",", ".")) for a in re.findall(r"(\d+(?:,\d{1,2})?)\s*(?:€|euros?)", text)]
+    if not amounts:
+        return 1
+    return 3 if max(amounts) - min(amounts) > 50 else 2
+
+
 def tidy_compensation(category: str, cents: int) -> int:
     """Turns the model's amount into one the grid can give.
 
