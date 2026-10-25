@@ -23,6 +23,7 @@ from workforce.train import MODEL_PATH
 TEST_DAYS = range(10_000, 10_030)          # 30 days per scenario the agents never saw
 KEYS = ("sla", "abandonment_rate", "avg_wait_s", "occupancy", "staff_cost_eur", "satisfaction")
 RESULTS_PATH = Path(__file__).resolve().parent / "models" / "comparison.json"
+MARKDOWN_PATH = Path(__file__).resolve().parent / "models" / "results.md"
 BASELINE, REACTIVE, MARGIN, RL = "Erlang C plan", "Reactive rule", "Margin rule", "RL agent (PPO)"
 
 
@@ -108,9 +109,51 @@ def print_tables(results: dict) -> None:
                   f"(t = {t['t']}, {verdict})")
 
 
+def markdown_tables(results: dict) -> str:
+    """The results as Markdown tables, ready to paste into workforce/README.md."""
+    names = [BASELINE, REACTIVE, MARGIN, RL]
+    label = lambda s: s.replace("_", " ")  # noqa: E731
+    out = [f"Same {len(TEST_DAYS)} test days per scenario for every policy. "
+           f"RL = average of {next(iter(results.values()))['agents']} agents ± the spread between them.", "",
+           "### Total cost per day (staff + price of bad service)", "",
+           "| Scenario | Erlang C plan | Reactive rule | Margin rule | RL agent | Best |", "|---|---|---|---|---|---|"]
+    for scenario, r in results.items():
+        costs = {n: r[n]["total_cost_eur"] for n in names}
+        best = min(costs, key=costs.get)
+        cells = []
+        for n in names:
+            text = f"{costs[n]:,.0f} €"
+            if n == RL and r["agents"] > 1:
+                text += f" ±{r['rl_spread_between_agents']['total_cost_eur']:,.0f}"
+            cells.append(f"**{text}**" if n == best else text)
+        out.append(f"| {label(scenario)} | " + " | ".join(cells) + f" | {best.replace(' (PPO)', '')} |")
+    averages = [statistics.mean(r[n]["total_cost_eur"] for r in results.values()) for n in names]
+    worst = [max(r[n]["total_cost_eur"] - min(r[m]["total_cost_eur"] for m in names) for r in results.values())
+             for n in names]
+    out.append("| **average** | " + " | ".join(f"{v:,.0f} €" for v in averages) + " | |")
+    out.append("| **worst gap to the best policy** | " + " | ".join(f"{v:,.0f} €" for v in worst) + " | |")
+
+    def test(t):
+        verdict = "significant" if t["significant"] else "not significant"
+        return f"{t['saving_per_day']:+,.0f} €/day, better on {t['better_days']}/{t['days']} ({verdict})"
+
+    out += ["", "### Is the RL agent really better? (paired test on the same days; + = RL cheaper)", "",
+            "| Scenario | RL vs Erlang C | RL vs reactive rule | RL vs margin rule |", "|---|---|---|---|"]
+    out += [f"| {label(s)} | {test(r['rl_vs_baseline'])} | {test(r['rl_vs_reactive'])} | {test(r['rl_vs_margin'])} |"
+            for s, r in results.items()]
+    out += ["", "### Service", "",
+            "| Scenario | SLA (20 s): Erlang C / reactive / margin / RL | Hang-ups: Erlang C / reactive / margin / RL |",
+            "|---|---|---|"]
+    out += [f"| {label(s)} | " + " / ".join(f"{r[n]['sla']:.1%}" for n in names) + " | "
+            + " / ".join(f"{r[n]['abandonment_rate']:.1%}" for n in names) + " |" for s, r in results.items()]
+    return "\n".join(out) + "\n"
+
+
 if __name__ == "__main__":
     results = compare()
     print_tables(results)
     RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
     RESULTS_PATH.write_text(json.dumps(results, indent=2), encoding="utf-8")
+    MARKDOWN_PATH.write_text(markdown_tables(results), encoding="utf-8")
     print(f"\nSaved to {RESULTS_PATH} (the dashboard can read it)")
+    print(f"Tables for the README: {MARKDOWN_PATH}")
