@@ -31,6 +31,8 @@ from callverse.state import CallState, Message, ToolCall
 
 MAX_TOOL_ROUNDS = 4
 MIN_QUESTION_WORDS = 3
+MAX_SENTENCES = 5           # the prompt asks for 4; the code cuts what is beyond 5
+COMPENSATION_WORDS = re.compile(r"compensation|geste commercial|\bun avoir\b|dédommag|indemni|offrir|offert", re.I)
 ESCALATION_ACTION = re.compile(r"transmis à un responsable", re.I)   # rules.ESCALATION_ACTION, said by the reminder
 # words in the customer's message -> the product it needs (the product codes of catalogue.md)
 NEEDS_PRODUCT = [
@@ -129,9 +131,54 @@ def system_prompt(state: CallState) -> str:
 
 def reminder(state: CallState) -> str:
     """The last instruction before the model answers, chosen by the situation."""
-    if state.complaint_result is None:
+    result = state.complaint_result
+    if result is None:
         return prompts.REMINDER
-    return prompts.ESCALATED_REMINDER if state.complaint_result.escalate else prompts.COMPLAINT_REMINDER
+    if result.escalate:
+        return prompts.ESCALATED_REMINDER
+    return prompts.COMPLAINT_REMINDER.format(compensation=compensation_text(result.compensation_cents))
+
+
+def compensation_text(cents: int) -> str:
+    return euros(cents) if cents else "aucune"
+
+
+# ---------------------------------------------------------------- checks on the answer, done by code
+
+def sentences(text: str) -> list[str]:
+    return [part for part in re.split(r"(?<=[.!?])\s+", text.strip()) if part]
+
+
+def keep_compensation(text: str, state: CallState) -> str:
+    """The advisor may not invent or change the specialist's compensation (it once promised 20 € instead of
+    11,70 €). A sentence about compensation with another amount is replaced by the decided amount."""
+    result = state.complaint_result
+    if result is None:
+        return text
+    decided = result.compensation_cents
+    fixed, said = [], False
+    for sentence in sentences(text):
+        amounts = {round(float(a.replace(",", ".")) * 100) for a in re.findall(r"(\d+(?:,\d{1,2})?)\s*(?:€|euros?)", sentence)}
+        about_money = COMPENSATION_WORDS.search(sentence)
+        if about_money and (amounts - {decided} or (amounts and result.escalate)):
+            if not said and not result.escalate:
+                fixed.append(prompts.COMPENSATION_SENTENCE.format(amount=euros(decided)) if decided
+                             else prompts.NO_COMPENSATION_SENTENCE)
+                said = True
+            continue                        # the invented amount is dropped
+        fixed.append(sentence)
+    return " ".join(fixed)
+
+
+def tidy_answer(text: str) -> str:
+    """At most MAX_SENTENCES sentences, and one question at the end, not two."""
+    parts = sentences(text)
+    closing = parts[-1] if parts and parts[-1] == prompts.CLOSING else None
+    body = [p for p in parts if p != prompts.CLOSING]
+    if any(prompts.ASK_CONSENT in p for p in body):
+        closing = None                      # "Voulez-vous que je le fasse ?" is already the question
+    body = body[:MAX_SENTENCES]
+    return " ".join(body + ([closing] if closing else [])) or FALLBACK_ANSWER
 
 
 def tell_escalation(text: str, state: CallState) -> str:
@@ -189,7 +236,7 @@ def answer(model, state: CallState) -> tuple[str, list[ToolCall]]:
         reply = text_tool_call(with_tools.invoke(messages), tools)
         messages.append(reply)
         if not reply.tool_calls:
-            return tell_escalation(clean(reply.content), state), calls
+            return finish(clean(reply.content), state), calls
         for call in reply.tool_calls:
             args = fix_arguments(call, state)
             calls.append(ToolCall(name=call["name"], arguments=args))
@@ -200,7 +247,12 @@ def answer(model, state: CallState) -> tuple[str, list[ToolCall]]:
     text = clean(reply.content)
     if looks_like_tool_call(text):          # still JSON: never say it to the customer
         text = FALLBACK_ANSWER
-    return tell_escalation(text, state), calls
+    return finish(text, state), calls
+
+
+def finish(text: str, state: CallState) -> str:
+    """The checks done by code on every answer, in order."""
+    return tell_escalation(tidy_answer(keep_compensation(text, state)), state)
 
 
 def looks_like_tool_call(text: str) -> bool:

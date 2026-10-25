@@ -15,7 +15,8 @@ moyen de paiement : {payment} ; client depuis {tenure} mois.
 N'inventez pas d'autre fait sur votre compte. Si le conseiller vous demande quelque chose que vous ne savez pas,
 dites-le simplement.
 
-Vous parlez au téléphone : 1 à 3 phrases courtes, en français parlé, sans liste. Vouvoyez le conseiller."""
+Vous parlez au téléphone : 1 à 3 phrases courtes, en français parlé, sans liste. Vouvoyez le conseiller.
+Ne donnez ni nom ni numéro : vous êtes déjà identifié. N'écrivez jamais de texte entre crochets."""
 
 OPENING = """{role}
 
@@ -32,4 +33,5 @@ Lisez la réponse du conseiller et décidez :
 
 satisfaction : de 1 (très mécontent) à 5 (très satisfait), selon votre humeur et la façon dont le conseiller
 vous a traité (clarté, politesse, solution). Un client mécontent ne met pas 5 juste parce qu'on lui a répondu.
-Ne terminez pas l'appel tant que le conseiller n'a pas vraiment répondu à votre demande, sauf si vous raccrochez."""
+Ne terminez pas l'appel tant que le conseiller n'a pas vraiment répondu à votre demande, sauf si vous raccrochez.
+Si vous n'avez plus de question, choisissez accept : ne relancez pas la conversation pour rien."""

@@ -177,3 +177,18 @@ def test_whole_call_with_the_pretend_customer(monkeypatch):
     assert [m.role for m in done.messages] == ["client", "advisor", "client", "advisor", "client"]
     assert done.outcome == "resolved" and done.satisfaction == 5 and done.turn == 3
     assert done.quality_report is not None
+
+
+def test_placeholders_and_labels_are_removed():
+    assert agent.clean("Client : Bonjour, mon nom est [votre nom] et j'ai un souci.") == "Bonjour et j'ai un souci."
+    assert agent.clean("« Bonjour, je suis [Nom], ma box est en panne. »") == "Bonjour, ma box est en panne."
+
+
+@pytest.mark.parametrize("decision, message, expected", [
+    ("continue", "Non, c'est tout, merci. Je vais attendre.", "accept"),     # a goodbye is not "continue"
+    ("accept", "Merci. Et est-ce que je vais recevoir un rappel ?", "continue"),   # a new question
+    ("accept", "Merci, au revoir.", "accept"),
+    ("refuse", "Non merci, au revoir.", "refuse"),
+])
+def test_decision_matches_the_words(decision, message, expected):
+    assert agent.consistent(decision, message) == expected

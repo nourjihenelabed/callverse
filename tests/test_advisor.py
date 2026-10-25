@@ -274,3 +274,23 @@ def test_tool_call_written_as_text_is_run_not_said(monkeypatch, rules):
 def test_ordinary_text_starting_with_a_brace_is_kept():
     reply = agent.AIMessage('{"note": "pas un outil"}')
     assert agent.text_tool_call(reply, {"search_policies": None}) is reply
+
+
+def test_an_invented_compensation_is_replaced_by_the_decided_one():
+    state = complaint_call(escalate=False)                                   # the specialist decided 15 €
+    text = agent.finish("Je comprends. Le spécialiste a décidé de vous offrir une compensation de 20 €. "
+                        "Puis-je vous aider pour autre chose ?", state)
+    assert "20 €" not in text and "15,00 €" in text
+
+
+def test_a_refund_amount_is_not_touched():
+    state = complaint_call(escalate=False)
+    text = "Nous vous remboursons 27,98 € facturés à tort. Puis-je vous aider pour autre chose ?"
+    assert agent.finish(text, state) == text
+
+
+def test_long_answers_are_cut_and_only_one_question_is_asked():
+    long = " ".join(f"Phrase {n}." for n in range(1, 9)) + " " + prompts.CLOSING
+    assert agent.tidy_answer(long) == " ".join(f"Phrase {n}." for n in range(1, agent.MAX_SENTENCES + 1)) + " " + prompts.CLOSING
+    two = f"Je peux le changer. {prompts.ASK_CONSENT} {prompts.CLOSING}"
+    assert agent.tidy_answer(two) == f"Je peux le changer. {prompts.ASK_CONSENT}"

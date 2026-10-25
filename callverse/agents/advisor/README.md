@@ -20,6 +20,9 @@ The only worker the customer talks to. It runs with the AI model (`llama3.1:8b` 
      back within 48 working hours (added by code if the model forgets). The model is told the specialist's
      actions are only ideas for the manager, so it promises no refund, and it never sees the reason
      (it can be the churn risk, which is internal);
+   - the specialist's compensation cannot be changed: a sentence about compensation with another amount
+     is replaced by the decided amount (the model once promised 20 € instead of the decided amount);
+   - answers are cut after 5 sentences, and only one question is asked at the end;
    - if the model writes its tool call as text (`{"name": "search_policies", ...}`), the tool is run
      and the customer never hears the JSON. When the specialist has decided, its decision (actions,
    compensation, escalation) is given to the model, which explains exactly that to the customer.
@@ -52,6 +55,6 @@ They never read `churned` (the real answer, kept for evaluation) nor `churn_risk
 
 ## Checks
 
-- `pytest tests/test_advisor.py`: 25 tests with a scripted fake model, a temporary SQLite database
+- `pytest tests/test_advisor.py`: 28 tests with a scripted fake model, a temporary SQLite database
   and a fake search model. No Ollama needed.
 - `python scripts/try_advisor.py`: the real model, database and rules search.

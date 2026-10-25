@@ -68,6 +68,32 @@ def check_compensation(severity: int, cents: int) -> tuple[int, bool]:
     return cents, cents > AUTO_CAP_CENTS[severity]
 
 
+# compensation_grid.md, "Coupure de service": the box price / 30, per day without service, after 48 hours
+DAILY_OUTAGE_CREDIT_CENTS = {"box_fibre": 117, "box_adsl": 83}
+OUTAGE_MIN_DAYS = 3                     # "plus de 48 heures"
+DAY_WORDS = {"deux": 2, "trois": 3, "quatre": 4, "cinq": 5, "six": 6, "sept": 7, "huit": 8, "neuf": 9, "dix": 10}
+WEEK_WORDS = {"une": 7, "deux": 14}
+
+
+def outage_days(text: str) -> int | None:
+    """How many days the customer says the outage lasts: "coupé depuis 4 jours" -> 4, "une semaine" -> 7."""
+    plain = _plain(text)
+    if match := re.search(r"\b(\d+)\s*jours?\b", plain):
+        return int(match.group(1))
+    if match := re.search(rf"\b({'|'.join(DAY_WORDS)})\s+jours?\b", plain):
+        return DAY_WORDS[match.group(1)]
+    if match := re.search(rf"\b({'|'.join(WEEK_WORDS)})\s+semaines?\b", plain):
+        return WEEK_WORDS[match.group(1)]
+    return None
+
+
+def outage_credit(days: int | None, box_code: str | None) -> int | None:
+    """The outage credit of the grid, or None when it does not apply (or the facts are unknown)."""
+    if days is None or box_code not in DAILY_OUTAGE_CREDIT_CENTS or days < OUTAGE_MIN_DAYS:
+        return None
+    return days * DAILY_OUTAGE_CREDIT_CENTS[box_code]
+
+
 def tidy_compensation(category: str, cents: int) -> int:
     """Turns the model's amount into one the grid can give.
 

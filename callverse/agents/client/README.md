@@ -17,6 +17,8 @@ Plays the person who calls, so whole calls can run on their own. It runs with th
 4. **Rules kept by code:**
    - each mood has a patience limit; when it runs out, the customer hangs up (`abandoned`, satisfaction 2 at most);
    - accepting an escalated complaint ends the call as `escalated`;
+   - the decision must match the words: a goodbye counts as `accept`, a new question as `continue`;
+   - placeholders like "[votre nom]" are removed;
    - if the model fails, the customer ends the call politely instead of stopping the program.
 
 ## The six moods
@@ -41,5 +43,5 @@ Plays the person who calls, so whole calls can run on their own. It runs with th
 
 ## Checks
 
-- `pytest tests/test_client.py`: 18 tests with a scripted fake model and a temporary SQLite database.
+- `pytest tests/test_client.py`: 24 tests with a scripted fake model and a temporary SQLite database.
 - `python scripts/try_call.py`: whole calls with the real customer, advisor and complaint specialist.

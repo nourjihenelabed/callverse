@@ -41,12 +41,18 @@ REMINDER = """
 
 RAPPEL avant de répondre : 4 phrases au maximum, vouvoiement. Propose les actions au conditionnel
 (« je peux suspendre votre ligne ») et demande « Voulez-vous que je le fasse maintenant ? ».
-N'écris jamais « nous allons » ou « c'est fait » avant l'accord du client."""
+N'écris jamais « nous allons » ou « c'est fait » avant l'accord du client. Si le client vient de dire oui
+à une action que tu as proposée, confirme simplement qu'elle est enregistrée.
+Ne promets aucun délai, aucune priorité et aucun montant qui ne figure pas dans les règles ci-dessus."""
 
 COMPLAINT_REMINDER = """
 
 RAPPEL avant de répondre : 4 phrases au maximum, vouvoiement. Reconnais d'abord le problème, puis explique
-la décision du spécialiste ci-dessus, sans rien ajouter. Ne cite pas les noms des fichiers de règles."""
+la décision du spécialiste ci-dessus, sans rien ajouter. Ne cite pas les noms des fichiers de règles.
+La compensation est fixée par le spécialiste ({compensation}) : tu ne peux ni la changer ni en promettre
+une autre. Si le client la conteste, dis calmement que c'est le montant prévu par la grille.
+Si tu as déjà expliqué la décision, ne la répète pas : réponds seulement à la nouvelle question du client.
+Ne promets aucun délai, aucune priorité et aucun montant qui ne figure pas dans les règles ci-dessus."""
 
 ESCALATED_REMINDER = """
 
@@ -68,6 +74,10 @@ Décide ce que le client veut dans son DERNIER message.
 - is_complaint : true si le client exprime un mécontentement et attend une correction ou un geste
   (facture anormale, panne qui dure, frais contestés, service mal rendu, menace de partir ou de porter plainte).
   false pour une simple question, même posée sur un ton pressé.
+  false aussi quand le client signale simplement une panne ou un problème technique (internet lent, box
+  en panne, SIM à activer) : c'est une demande d'aide, pas une réclamation. Elle devient une réclamation
+  seulement s'il se plaint de la façon dont CallVerse l'a traité, si le problème dure depuis plusieurs jours,
+  ou s'il demande un remboursement ou un geste.
 
 Conversation :
 {conversation}"""
@@ -87,6 +97,9 @@ Ne les promets pas. La raison du transfert est interne : ne la donne jamais au c
 
 ESCALATION_SENTENCE = "Votre dossier est transmis à un responsable, qui vous recontactera sous 48 heures ouvrées."
 CLOSING = "Puis-je vous aider pour autre chose ?"
+ASK_CONSENT = "Voulez-vous que je le fasse maintenant ?"
+COMPENSATION_SENTENCE = "La compensation prévue pour votre dossier est de {amount}."
+NO_COMPENSATION_SENTENCE = "Aucune compensation n'est prévue pour votre dossier."
 
 FORCE_ANSWER = """Tu as assez cherché. Réponds maintenant au client avec ce que tu sais, sans utiliser d'outil.
 Si une information manque, dis-le et propose de le rappeler."""

@@ -256,3 +256,22 @@ def test_different_steps_are_kept():
 ])
 def test_compensation_is_an_amount_the_grid_can_give(category, cents, expected):
     assert rules.tidy_compensation(category, cents) == expected
+
+
+@pytest.mark.parametrize("text, days", [("coupé depuis 4 jours", 4), ("depuis une semaine", 7),
+                                        ("depuis trois jours", 3), ("depuis ce matin", None)])
+def test_outage_days_are_read_from_the_customer_words(text, days):
+    assert rules.outage_days(text) == days
+
+
+def test_outage_credit_is_computed_from_the_box_not_guessed():
+    case = steps.Case(category="technical", severity=4, compensation_cents=1170)   # the model's guess
+    case.history = steps.History(box_code="box_adsl")
+    steps.check_fix(call("Mon internet est coupé depuis 4 jours !", "complaint_technical"), case, None)
+    assert case.compensation_cents == 4 * 83                                      # 3,32 € as in the grid
+
+
+def test_no_outage_credit_under_48_hours_or_without_a_box():
+    assert rules.outage_credit(2, "box_fibre") is None
+    assert rules.outage_credit(5, None) is None
+    assert rules.outage_credit(5, "box_fibre") == 585

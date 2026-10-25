@@ -17,6 +17,7 @@ The AI model comes from get_model() and the account from get_facts(), so tests c
 """
 
 import logging
+import re
 from typing import Literal
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -69,7 +70,7 @@ def client_node(state: CallState) -> dict:
     update = {"messages": [Message(role="client", content=turn.message)], "turn": state.turn + 1}
 
     # 3. rules kept by code
-    decision = turn.decision
+    decision = consistent(turn.decision, turn.message)
     if decision == "continue" and state.turn >= PERSONAS[state.persona].patience:
         decision = "hang_up"
         update["messages"] = [Message(role="client", content=PERSONAS[state.persona].hang_up)]
@@ -124,13 +125,28 @@ def reply(model, role: str, state: CallState) -> ClientTurn:
     return ClientTurn(decision="accept", message="D'accord, merci. Au revoir.", satisfaction=3)
 
 
+GOODBYE = re.compile(r"au revoir|c'est tout|bonne (journée|soirée)|je raccroche", re.I)
+
+
+def consistent(decision: str, message: str) -> str:
+    """The decision must match the words (the small model sometimes says goodbye but picks "continue",
+    or asks two new questions but picks "accept")."""
+    if decision == "continue" and GOODBYE.search(message) and "?" not in message:
+        return "accept"
+    if decision == "accept" and "?" in message and not GOODBYE.search(message):
+        return "continue"
+    return decision
+
+
 def fallback_opening(state: CallState) -> str:
     return f"Bonjour, je vous appelle pour {state.call_reason.replace('complaint_', 'une réclamation ').replace('_', ' ')}."
 
 
 def clean(text: str) -> str:
-    """No quotes or role labels around the sentence ("Client : ...")."""
-    text = (text or "").strip().strip('"«»“” ').strip()
+    """No quotes, role labels ("Client : ...") or placeholders ("mon nom est [votre nom]")."""
+    text = re.sub(r",?\s*(je m'appelle|mon nom est|je suis|ici)\s*\[[^\]]*\]", "", text or "", flags=re.I)
+    text = re.sub(r"\s*\[[^\]]*\]", "", text)
+    text = text.strip().strip('"«»“” ').strip()
     for label in ("Client :", "Client:", "CLIENT :", "Moi :"):
         if text.startswith(label):
             text = text[len(label):].strip()
