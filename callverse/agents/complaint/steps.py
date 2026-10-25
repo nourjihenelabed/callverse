@@ -175,13 +175,17 @@ def draft_fix(state: CallState, case: Case, tools: Tools) -> None:
 
 def check_fix(state: CallState, case: Case, tools: Tools) -> None:
     """5. Keep the compensation inside the grid and add any required step that is missing."""
-    case.compensation_cents, case.over_cap = rules.check_compensation(case.severity, case.compensation_cents)
+    cents = rules.tidy_compensation(case.category, case.compensation_cents)
+    case.compensation_cents, case.over_cap = rules.check_compensation(case.severity, cents)
 
     required = rules.REQUIRED_ACTIONS[case.category]
-    same = [a for a in case.actions if a.casefold() == required.casefold()]   # "Vérifier..." is "vérifier..."
-    if not same:
+    if not any(rules.same_step(a, required) for a in case.actions):
         case.rules_cited.append(RULE_REQUIRED)
-    case.actions = [required] + [a for a in case.actions if a not in same]
+    actions = [required]
+    for action in case.actions:              # no step twice, even written a bit differently
+        if not any(rules.same_step(action, kept) for kept in actions):
+            actions.append(action)
+    case.actions = actions
     if case.compensation_cents > 0 and not any(r.startswith("compensation_grid.md") for r in case.rules_cited):
         case.rules_cited.append(RULE_CAPS)
 

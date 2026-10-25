@@ -3,6 +3,8 @@
 No Ollama and no database: a fake model gives fixed answers and the history is made up.
 """
 
+import pytest
+
 from callverse.agents.complaint import rules, steps
 from callverse.graph import run_call
 from callverse.state import CallState, ComplaintResult, Message
@@ -230,10 +232,27 @@ def test_graph_skips_the_follow_up_on_an_everyday_call(monkeypatch):
     assert t.updates == []
 
 
-def test_required_step_is_not_listed_twice_with_another_capital_letter():
+def test_required_step_is_not_listed_twice_even_reworded():
     case = steps.Case()
     case.category = "billing"
-    case.actions = [rules.REQUIRED_ACTIONS["billing"].capitalize(), "Rembourser le montant"]
+    case.actions = ["Vérifier la facture concernée et les produits du client avant toute proposition.",
+                    "Rembourser le montant facturé à tort en totalité.", "rembourser le montant facturé à tort"]
     steps.check_fix(None, case, None)
-    assert [a.casefold() for a in case.actions].count(rules.REQUIRED_ACTIONS["billing"].casefold()) == 1
+    assert case.actions == [rules.REQUIRED_ACTIONS["billing"], "Rembourser le montant facturé à tort en totalité."]
     assert steps.RULE_REQUIRED not in case.rules_cited      # the model had already proposed it
+
+
+def test_different_steps_are_kept():
+    assert not rules.same_step("Rembourser le montant", "Proposer un virement")
+    assert rules.same_step("vérifier la facture", "Vérifier la facture concernée.")
+
+
+@pytest.mark.parametrize("category, cents, expected", [
+    ("billing", 50, 0),            # 0,50 €: cents and euros mixed up
+    ("billing", 480, 500),         # whole euros
+    ("billing", 500, 500),
+    ("technical", 585, 585),       # 5 days of fibre outage: 5 x 1,17 €
+    ("technical", 83, 0),
+])
+def test_compensation_is_an_amount_the_grid_can_give(category, cents, expected):
+    assert rules.tidy_compensation(category, cents) == expected

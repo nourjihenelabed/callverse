@@ -68,6 +68,25 @@ def check_compensation(severity: int, cents: int) -> tuple[int, bool]:
     return cents, cents > AUTO_CAP_CENTS[severity]
 
 
+def tidy_compensation(category: str, cents: int) -> int:
+    """Turns the model's amount into one the grid can give.
+
+    The grid gives whole euros (5 €, 10 €...), except the outage credit of the technical
+    category (1,17 € or 0,83 € per day, at least 2 days, so never under 1 €). An amount
+    under 1 € is a model mistake (cents and euros mixed up): no compensation.
+    """
+    if cents < 100:
+        return 0
+    return cents if category == "technical" else round(cents / 100) * 100
+
+
+def same_step(a: str, b: str) -> bool:
+    """True when two actions are the same step, even with another capital letter or a few
+    more words: "vérifier la facture" and "Vérifier la facture concernée avant toute proposition."."""
+    key_a, key_b = (" ".join(re.findall(r"[a-z0-9]+", _plain(text))) for text in (a, b))
+    return bool(key_a and key_b) and (key_a.startswith(key_b) or key_b.startswith(key_a))
+
+
 def escalation_reasons(
     *, legal_threat: bool, repeat_count: int, churn_risk: float | None, over_cap: bool
 ) -> list[str]:
