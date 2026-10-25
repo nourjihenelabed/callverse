@@ -47,3 +47,18 @@ Réponds avec :
   Mets 0 si la grille ne prévoit rien.
 - rules_used : les numéros [n] des règles qui justifient ta décision.
 """
+
+# Step 3 searches the rules in French: the category codes ("technical") mean little to the search.
+SEARCH_TOPICS = {
+    "billing": "une erreur de facturation, un montant facturé à tort ou un double prélèvement",
+    "technical": "une coupure de service internet, une panne ou un débit trop lent",
+    "contract": "un contrat, un changement d'offre non appliqué ou une durée d'engagement contestée",
+    "termination": "une résiliation, des frais de résiliation contestés ou une facture après résiliation",
+    "service_quality": "la qualité de service, un conseiller impoli, un rappel promis non fait ou une attente trop longue",
+    "delivery": "la livraison et l'installation, une box non reçue ou un technicien absent au rendez-vous",
+}
+
+SEARCH_QUESTIONS = (
+    "Quelle compensation accorder pour {topic} ?",
+    "Que doit vérifier le spécialiste pour {topic} ?",
+)

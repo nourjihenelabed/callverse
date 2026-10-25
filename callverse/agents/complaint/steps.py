@@ -128,10 +128,9 @@ def check_history(state: CallState, case: Case, tools: Tools) -> None:
 
 def search_rules(state: CallState, case: Case, tools: Tools) -> None:
     """3. Find the company rules for this kind of complaint."""
-    questions = [
-        f"Compensation et plafond pour une réclamation {case.category} de gravité {case.severity}",
-        _client_text(state) or state.call_reason,
-    ]
+    topic = prompts.SEARCH_TOPICS[case.category]
+    questions = [q.format(topic=topic) for q in prompts.SEARCH_QUESTIONS]
+    questions.append(_client_text(state) or state.call_reason)
     seen = set()
     for question in questions:
         for hit in tools.search(question):
