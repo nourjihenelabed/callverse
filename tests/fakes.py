@@ -54,3 +54,47 @@ class KeywordModel(ScriptedModel):
                 return schema(intent="complaint_billing" if complaint else "check_invoice", is_complaint=complaint)
 
         return Structured()
+
+
+# ---------------------------------------------------------------- the pretend customer
+
+FAKE_FACTS = {"codes": ["box_fibre", "forfait_mobile"], "offers": "Box Fibre, Forfait Mobile 100 Go",
+              "bill": "49,98 €", "double_bill": "99,96 €", "box": "Box Fibre", "contract": "sans engagement",
+              "payment": "prélèvement automatique", "tenure": 14, "other_offer": "Box ADSL",
+              "other_option": "TV", "churn_risk": 0.4}
+
+
+class StructuredScript:
+    """A fake model whose structured answers are given in advance, one per call."""
+
+    def __init__(self, answers=()):
+        self.answers = list(answers)
+        self.sent = []
+
+    def with_structured_output(self, schema):
+        model = self
+
+        class Structured:
+            def invoke(self, prompt):
+                model.sent.append(list(prompt) if isinstance(prompt, list) else prompt)
+                answer = model.answers.pop(0)
+                if isinstance(answer, Exception):
+                    raise answer
+                return schema(**answer)
+
+        return Structured()
+
+
+class PoliteCustomer:
+    """For the whole-call tests: opens with the stub's sentences, then accepts the first answer."""
+
+    def with_structured_output(self, schema):
+        class Structured:
+            def invoke(self, prompt):
+                if schema.__name__ == "Opening":
+                    complaint = "réclamation" in str(prompt)
+                    return schema(message="Bonjour, ma facture est beaucoup trop élevée ce mois-ci, ce n'est pas normal."
+                                  if complaint else "Bonjour, je voudrais comprendre ma dernière facture.")
+                return schema(decision="accept", message="D'accord, merci beaucoup. Au revoir.", satisfaction=4)
+
+        return Structured()
