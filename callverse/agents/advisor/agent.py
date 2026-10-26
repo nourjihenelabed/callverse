@@ -20,17 +20,22 @@ The AI model comes from get_model(), so tests can replace it with a fake one.
 
 import json
 import re
+from difflib import SequenceMatcher
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from pydantic import BaseModel, Field
 
 from callverse.agents.advisor import prompts
-from callverse.agents.advisor.tools import build_tools, customer_file, euros, policy_search, product_codes
+from callverse.agents.advisor.tools import (build_tools, catalogue, customer_file, euros, policy_search,
+                                            product_codes)
 from callverse.llm import get_llm
 from callverse.state import CallState, Message, ToolCall
 
 MAX_TOOL_ROUNDS = 4
 MIN_QUESTION_WORDS = 3
+REPEAT_SIMILARITY = 0.8    # 80% the same words in the same order = the same answer again
+MAX_SENTENCES = 5           # the prompt asks for 4; the code cuts what is beyond 5
+COMPENSATION_WORDS = re.compile(r"compensation|geste commercial|\bun avoir\b|dédommag|indemni|offrir|offert", re.I)
 ESCALATION_ACTION = re.compile(r"transmis à un responsable", re.I)   # rules.ESCALATION_ACTION, said by the reminder
 # words in the customer's message -> the product it needs (the product codes of catalogue.md)
 NEEDS_PRODUCT = [
@@ -111,8 +116,16 @@ def history(state: CallState) -> list:
     return [HumanMessage(m.content) if m.role == "client" else AIMessage(m.content) for m in state.messages]
 
 
+def catalogue_text() -> str:
+    """The 10 offers and their prices, always given to the model (it once said the Box ADSL did not exist)."""
+    try:
+        return "\n".join(f"- {name} : {euros(cents)}/mois" for name, cents in catalogue().values())
+    except OSError:
+        return "(catalogue indisponible : utilise search_policies)"
+
+
 def system_prompt(state: CallState) -> str:
-    text = prompts.SYSTEM.format(customer_id=state.customer_id)
+    text = prompts.SYSTEM.format(customer_id=state.customer_id, catalogue=catalogue_text())
     result = state.complaint_result
     if result is not None:
         actions = [a for a in result.actions if not ESCALATION_ACTION.search(a)]
@@ -129,9 +142,54 @@ def system_prompt(state: CallState) -> str:
 
 def reminder(state: CallState) -> str:
     """The last instruction before the model answers, chosen by the situation."""
-    if state.complaint_result is None:
+    result = state.complaint_result
+    if result is None:
         return prompts.REMINDER
-    return prompts.ESCALATED_REMINDER if state.complaint_result.escalate else prompts.COMPLAINT_REMINDER
+    if result.escalate:
+        return prompts.ESCALATED_REMINDER
+    return prompts.COMPLAINT_REMINDER.format(compensation=compensation_text(result.compensation_cents))
+
+
+def compensation_text(cents: int) -> str:
+    return euros(cents) if cents else "aucune"
+
+
+# ---------------------------------------------------------------- checks on the answer, done by code
+
+def sentences(text: str) -> list[str]:
+    return [part for part in re.split(r"(?<=[.!?])\s+", text.strip()) if part]
+
+
+def keep_compensation(text: str, state: CallState) -> str:
+    """The advisor may not invent or change the specialist's compensation (it once promised 20 € instead of
+    11,70 €). A sentence about compensation with another amount is replaced by the decided amount."""
+    result = state.complaint_result
+    if result is None:
+        return text
+    decided = result.compensation_cents
+    fixed, said = [], False
+    for sentence in sentences(text):
+        amounts = {round(float(a.replace(",", ".")) * 100) for a in re.findall(r"(\d+(?:,\d{1,2})?)\s*(?:€|euros?)", sentence)}
+        about_money = COMPENSATION_WORDS.search(sentence)
+        if about_money and (amounts - {decided} or (amounts and result.escalate)):
+            if not said and not result.escalate:
+                fixed.append(prompts.COMPENSATION_SENTENCE.format(amount=euros(decided)) if decided
+                             else prompts.NO_COMPENSATION_SENTENCE)
+                said = True
+            continue                        # the invented amount is dropped
+        fixed.append(sentence)
+    return " ".join(fixed)
+
+
+def tidy_answer(text: str) -> str:
+    """At most MAX_SENTENCES sentences, and one question at the end, not two."""
+    parts = sentences(text)
+    closing = parts[-1] if parts and parts[-1] == prompts.CLOSING else None
+    body = [p for p in parts if p != prompts.CLOSING]
+    if any(p.endswith("?") for p in body):
+        closing = None                      # it already asked a question: one at a time
+    body = body[:MAX_SENTENCES]
+    return " ".join(body + ([closing] if closing else [])) or FALLBACK_ANSWER
 
 
 def tell_escalation(text: str, state: CallState) -> str:
@@ -180,6 +238,24 @@ def missing_products(state: CallState, question: str) -> str:
 
 
 def answer(model, state: CallState) -> tuple[str, list[ToolCall]]:
+    text, calls, messages = first_answer(model, state)
+    if repeats_itself(text, state):
+        # the small model sometimes says the same thing turn after turn: ask once for a new answer
+        retry = model.invoke(messages + [HumanMessage(prompts.DONT_REPEAT)])
+        text = finish(clean(retry.content), state)
+        if repeats_itself(text, state) or looks_like_tool_call(text):
+            text = prompts.NOTHING_MORE
+    return text, calls
+
+
+def repeats_itself(text: str, state: CallState) -> bool:
+    """True when the answer is (almost) one the advisor already gave in this call."""
+    body = text.replace(prompts.CLOSING, "").strip()
+    earlier = [m.content.replace(prompts.CLOSING, "").strip() for m in state.messages if m.role == "advisor"]
+    return any(SequenceMatcher(None, body, old).ratio() >= REPEAT_SIMILARITY for old in earlier)
+
+
+def first_answer(model, state: CallState) -> tuple[str, list[ToolCall], list]:
     tools = {tool.name: tool for tool in build_tools(state.customer_id)}
     with_tools = model.bind_tools(list(tools.values()))
     context, calls = prefetch(state)
@@ -189,7 +265,7 @@ def answer(model, state: CallState) -> tuple[str, list[ToolCall]]:
         reply = text_tool_call(with_tools.invoke(messages), tools)
         messages.append(reply)
         if not reply.tool_calls:
-            return tell_escalation(clean(reply.content), state), calls
+            return finish(clean(reply.content), state), calls, messages
         for call in reply.tool_calls:
             args = fix_arguments(call, state)
             calls.append(ToolCall(name=call["name"], arguments=args))
@@ -200,7 +276,12 @@ def answer(model, state: CallState) -> tuple[str, list[ToolCall]]:
     text = clean(reply.content)
     if looks_like_tool_call(text):          # still JSON: never say it to the customer
         text = FALLBACK_ANSWER
-    return tell_escalation(text, state), calls
+    return finish(text, state), calls, messages
+
+
+def finish(text: str, state: CallState) -> str:
+    """The checks done by code on every answer, in order."""
+    return tell_escalation(tidy_answer(keep_compensation(text, state)), state)
 
 
 def looks_like_tool_call(text: str) -> bool:
@@ -249,5 +330,8 @@ def run_tool(tools: dict, name: str, args: dict) -> str:
 def clean(text) -> str:
     if isinstance(text, list):      # some models answer in parts
         text = " ".join(part.get("text", "") if isinstance(part, dict) else str(part) for part in text)
-    text = (text or "").strip()
-    return text or FALLBACK_ANSWER
+    text = re.sub(r",?\s*(je m'appelle|mon nom est|je suis|ici)\s*\[[^\]]*\]", "", text or "", flags=re.I)
+    text = re.sub(r"\s*\[[^\]]*\]", "", text)              # placeholders: "[Nom]"
+    text = re.sub(r"\s*\((pause|silence|un temps|[^)]*vérifi[^)]*)\)", "", text, flags=re.I)  # "(pause)"
+    text = re.sub(r"^\s*,\s*", "", text).strip()
+    return (text[:1].upper() + text[1:]) if text else FALLBACK_ANSWER

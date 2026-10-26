@@ -167,3 +167,14 @@ python scripts/try_advisor.py --chat           # type your own messages
 ```
 
 It shows what the advisor understood, the tools it used and its answer. See `callverse/agents/advisor/README.md`.
+
+### 6. Run whole pretend calls
+
+The AI customer talks to the AI advisor from start to finish:
+
+```bash
+python scripts/try_call.py                                         # 3 random calls
+python scripts/try_call.py --reason complaint_billing --persona demanding
+```
+
+See `callverse/agents/client/README.md`. Complaint calls open real tickets: run `python scripts/seed_data.py` again to clean them.
