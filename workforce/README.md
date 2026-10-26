@@ -6,52 +6,54 @@ The floor manager decides, every 15 minutes, how many advisors work on each queu
 
 | File | What it does |
 |---|---|
-| `simulation.py` | The simulated call center (SimPy): one day of calls, three queues, 21 calibrated advisors with skills, customers who hang up, realistic staffing rules, test scenarios, and the KPIs. |
-| `calibration.json` | Current calibration values fitted from the Technion data, with Phase 1/2 source metadata. |
+| `simulation.py` | The simulated call center (SimPy): one day of calls, three queues, 25 advisors with skills, customers who hang up, realistic staffing rules, test scenarios, and the KPIs. |
+| `calibration.json` | Every calibrated value with its source: arrivals, call durations, patience, forecast error, roster, and the tuned rule settings. |
 | `manager.py` | The rules: Erlang C plan, margin rule, reactive rule. |
+| `tune_rules.py` | Tunes the reactive and margin rules for the calibrated center (stored in `calibration.json`). |
 | `env.py` | The simulation as a Gymnasium environment, random training days, the reward, and `RLPolicy` to use a trained agent like any rule. |
 | `train.py` | Trains an agent with PPO (Stable-Baselines3). |
 | `compare.py` | Compares all policies on 8 test scenarios, 30 days each, with a statistical test. |
 | `explain.py` | Charts that explain the agent's decisions (XAI). |
+| `../scripts/calibrate_workforce.py` | Fits the calibration from the Technion files, roster included. |
+| `../scripts/run_workforce.py` | Reruns everything in order: calibration, rule tuning, training, comparison, charts. |
 
 ## How to run
 
 ```bash
 pip install -e ".[dev,rl]"            # RL packages, including PyTorch (about 1 GB) and Plotly
+python scripts/run_workforce.py       # everything below in one go (about 1 hour 15 min)
+                                      # add --skip-calibration if you do not have the Technion files
+
 python -m workforce.simulation        # one day with the Erlang C plan
+python -m workforce.tune_rules        # tune the reactive and margin rules (a few minutes)
 python -m workforce.train --seed 0    # about 20 minutes on a laptop; repeat with --seed 1 and --seed 2
-python -m workforce.compare           # the comparison tables (saved to workforce/models/comparison.json)
+python -m workforce.compare           # comparison tables: workforce/models/comparison.json and results.md
 python -m workforce.explain           # the XAI charts (workforce/models/explain/*.html)
 ```
 
 ## Calibration
 
-Phase 1 used the published Brown et al. (2005) analysis. Phase 2 now fits the
-same quantities from the twelve 1999 Technion Anonymous Bank files. The fitted
-values and their source metadata are in [`calibration.json`](./calibration.json).
-Regular and internet service are fitted from `AGENT` calls after removing
-durations under 10 seconds. The temporary complaint duration uses the longest
-observed type (`IN`), as specified by the calibration plan. Patience is fitted
-by queue-entry hour with a censored exponential estimate. The weekday arrival
-curve is rescaled to CallVerse's team choice of about 1,050 calls per day, while
-the daily volume coefficient of variation is retained in the calibration file.
-The +/-20% 15-minute forecast factor and Phase 1 roster sizing are retained.
+The simulation's numbers come from real call center data: the Technion "Anonymous Bank" call center, every call of 1999 (444,448 records). Phase 1 used the published analysis of this center (Brown et al., 2005); phase 2 fits the values from the raw files with `scripts/calibrate_workforce.py`. Every value and its source are in [`calibration.json`](./calibration.json).
 
-Run the fitter after downloading the archive:
+- **Arrivals per hour:** queue entries on the bank's working days, **Sunday to Thursday** (257 days), grouped by hour from 8h to 20h, then rescaled to CallVerse's volume of about 1,050 calls a day. Dates in the files are written `990901` (1 September 1999); the bank closes at 14:00 on Friday and reopens around 20:00 on Saturday, so those days are left out.
+- **Call durations:** log-normal fits of served (`AGENT`) calls after removing durations under 10 seconds: 3.2 minutes for regular calls (general), 6.9 minutes for internet calls (technical). Complaints use the longest observed type, a temporary assumption until phase 3.
+- **Patience:** censored exponential estimate, all queue waiting time divided by all hang-ups: about 8.0 minutes on average, by hour of the day.
+- **Forecast error:** each 15-minute period is up to ±20% around the forecast (Brown et al., 2005).
+- **Roster:** sized by the script so the Erlang C plan uses at most 80% of it at its busiest hour, per skill: 25 advisors (Erlang C peak: 20).
+- **Rules:** the reactive and margin rules are tuned for this calibrated center by `python -m workforce.tune_rules`, on random training days (never the test days).
 
 ```bash
-python scripts/calibrate_workforce.py
+python scripts/calibrate_workforce.py                 # needs the 12 files in data/raw/technion/
+python scripts/calibrate_workforce.py --roster-only   # only resize the roster, no raw files needed
 ```
 
-The raw archive and extracted files belong in `data/raw/technion/` and are
-ignored by Git. The script reads the documented fields, writes the fitted
-calibration, and records the number of files and records used.
+The raw files are not on GitHub: see `data/raw/README.md` for where to download them.
 
 ## The simulated call center
 
 - About 1,050 calls a day (8h–20h), using the rescaled weekday arrival curve fitted from the Technion data.
-- 21 advisors: 6 general only, 9 general + technical, 6 general + complaint. Paid 25 €/hour when on duty.
-- Service times and patience are fitted from the Technion data; inspect `calibration.json` for the exact values and observation counts.
+- 25 advisors: 8 general only, 10 general + technical, 7 general + complaint. Paid 25 €/hour when on duty.
+- Call durations (3.2 min general, 6.9 min technical and complaint) and patience (about 8 min) are fitted from the Technion data; `calibration.json` has the exact values and observation counts.
 - Each 15-minute arrival period varies randomly by up to 20% around the forecast, matching the published forecast-error range.
 - **Realistic staffing rules**, the same for every policy: an advisor called in stays **at least 1 hour**; moving to another queue takes **2 minutes**; a policy can turn on **priority** (multi-skilled advisors on general calls serve waiting technical or complaint calls first).
 
@@ -61,10 +63,10 @@ calibration, and records the number of files and records used.
 |---|---|
 | **Erlang C plan** | Staffing computed in advance from the forecast with the Erlang C formula (80% of calls answered within 20 s), hour by hour. Never changes during the day. |
 | **Reactive rule** | The Erlang C plan, plus one advisor per waiting customer (at most 5 per queue). |
-| **Margin rule** | The Erlang C plan, plus 4 general advisors, priority on. Found by analyzing what the first RL agent did (see "How we got here"). |
+| **Margin rule** | The Erlang C plan, plus a fixed safety margin (after tuning: 4 general and 1 technical advisors), priority on. Found by analyzing what an earlier RL agent did (see "How we got here"). |
 | **RL agent (PPO)** | Every 15 minutes, corrects the Erlang C plan by −3 to +3 advisors per queue and turns priority on or off. |
 
-The two rules' settings (and whether to use priority) were tuned on random training days, never on the test days.
+The two rules' settings (and whether to use priority) are tuned for the calibrated center on random training days, never on the test days (`workforce.tune_rules`).
 
 ## The RL problem
 
@@ -89,63 +91,62 @@ The two rules' settings (and whether to use priority) were tuned on random train
 
 ## Results
 
-Same 30 test days per scenario for every policy (days 10000–10029). RL = average of the 3 agents ± the spread between them.
+Calibrated simulation (Technion data, 25 advisors). Same 30 test days per scenario for every policy. RL = average of 3 agents ± the spread between them.
 
 ### Total cost per day (staff + price of bad service)
 
 | Scenario | Erlang C plan | Reactive rule | Margin rule | RL agent | Best |
 |---|---|---|---|---|---|
-| normal | 7,857 € | 7,664 € | **7,531 €** | 7,664 € ±102 | Margin rule |
-| network outage | 10,827 € | 9,591 € | **8,883 €** | 9,160 € ±177 | Margin rule |
-| billing day | 12,305 € | 10,707 € | **9,325 €** | 9,661 € ±388 | Margin rule |
-| afternoon promo | 11,651 € | 10,044 € | **8,480 €** | 9,197 € ±110 | Margin rule |
-| late outage | 9,906 € | 9,097 € | 8,992 € | **8,621 € ±149** | RL agent |
-| big outage | 13,491 € | 11,189 € | 10,946 € | **10,805 € ±86** | RL agent |
-| complaint storm | 10,105 € | **9,154 €** | 9,553 € | 9,238 € ±189 | Reactive rule |
-| quiet day | **6,004 €** | 6,015 € | 6,909 € | 6,564 € ±183 | Erlang C plan |
-| **average** | 10,268 € | 9,183 € | **8,827 €** | 8,864 € | |
-| **worst gap to the best policy** | 3,171 € | 1,564 € | 905 € | **717 €** | |
+| normal | 6,375 € | 6,089 € | 6,151 € | **6,055 € ±117** | RL agent |
+| network outage | 8,887 € | **7,403 €** | 7,542 € | 7,613 € ±183 | Reactive rule |
+| billing day | 9,579 € | 7,950 € | **7,243 €** | 7,289 € ±327 | Margin rule |
+| afternoon promo | 9,189 € | 7,185 € | **6,343 €** | 6,913 € ±35 | Margin rule |
+| late outage | 7,614 € | 6,688 € | 6,864 € | **6,676 € ±105** | RL agent |
+| big outage | 12,013 € | 9,581 € | 9,606 € | **9,469 € ±279** | RL agent |
+| complaint storm | 8,609 € | 7,036 € | 7,696 € | **7,026 € ±97** | RL agent |
+| quiet day | 4,588 € | **4,587 €** | 5,784 € | 4,981 € ±162 | Reactive rule |
+| **average** | 8,357 € | 7,065 € | 7,154 € | 7,003 € | |
+| **worst gap to the best policy** | 2,846 € | 842 € | 1,198 € | 570 € | |
 
-### Is the RL agent really better? (paired test on the same 30 days)
+### Is the RL agent really better? (paired test on the same days; + = RL cheaper)
 
-| Scenario | RL vs margin rule | RL vs reactive rule |
-|---|---|---|
-| normal | −133 €/day, better on 9/30 (significant) | 0 €/day, better on 15/30 (not significant) |
-| network outage | −276 €/day, better on 8/30 (significant) | +431 €/day, better on 23/30 (significant) |
-| billing day | −336 €/day, better on 8/30 (significant) | +1,046 €/day, better on 29/30 (significant) |
-| afternoon promo | −717 €/day, better on 1/30 (significant) | +847 €/day, better on 28/30 (significant) |
-| late outage | +371 €/day, better on 27/30 (significant) | +476 €/day, better on 26/30 (significant) |
-| big outage | +141 €/day, better on 16/30 (not significant) | +384 €/day, better on 22/30 (significant) |
-| complaint storm | +315 €/day, better on 22/30 (significant) | −83 €/day, better on 10/30 (not significant) |
-| quiet day | +344 €/day, better on 30/30 (significant) | −549 €/day, better on 0/30 (significant) |
+| Scenario | RL vs Erlang C | RL vs reactive rule | RL vs margin rule |
+|---|---|---|---|
+| normal | +320 €/day, better on 21/30 (significant) | +34 €/day, better on 17/30 (not significant) | +97 €/day, better on 19/30 (significant) |
+| network outage | +1,273 €/day, better on 29/30 (significant) | -210 €/day, better on 10/30 (not significant) | -71 €/day, better on 11/30 (not significant) |
+| billing day | +2,289 €/day, better on 30/30 (significant) | +660 €/day, better on 25/30 (significant) | -46 €/day, better on 15/30 (not significant) |
+| afternoon promo | +2,276 €/day, better on 29/30 (significant) | +272 €/day, better on 20/30 (significant) | -570 €/day, better on 3/30 (significant) |
+| late outage | +939 €/day, better on 28/30 (significant) | +12 €/day, better on 13/30 (not significant) | +188 €/day, better on 17/30 (not significant) |
+| big outage | +2,545 €/day, better on 30/30 (significant) | +112 €/day, better on 19/30 (not significant) | +137 €/day, better on 17/30 (not significant) |
+| complaint storm | +1,583 €/day, better on 29/30 (significant) | +10 €/day, better on 12/30 (not significant) | +670 €/day, better on 25/30 (significant) |
+| quiet day | -393 €/day, better on 2/30 (significant) | -395 €/day, better on 0/30 (significant) | +803 €/day, better on 30/30 (significant) |
 
 ### Service
 
 | Scenario | SLA (20 s): Erlang C / reactive / margin / RL | Hang-ups: Erlang C / reactive / margin / RL |
 |---|---|---|
-| normal | 90.5% / 91.8% / 97.2% / 95.5% | 3.3% / 2.8% / 1.1% / 1.6% |
-| network outage | 81.5% / 85.8% / 92.2% / 91.0% | 7.0% / 4.8% / 2.7% / 3.1% |
-| billing day | 78.4% / 84.1% / 92.4% / 90.6% | 7.9% / 5.4% / 3.1% / 3.3% |
-| afternoon promo | 78.6% / 84.2% / 93.6% / 90.3% | 8.0% / 5.3% / 2.1% / 3.2% |
-| late outage | 84.2% / 87.6% / 92.1% / 93.0% | 6.0% / 4.4% / 3.0% / 2.5% |
-| big outage | 75.2% / 81.1% / 85.7% / 86.1% | 10.4% / 6.4% / 5.2% / 4.9% |
-| complaint storm | 84.2% / 87.3% / 90.9% / 90.6% | 6.6% / 4.6% / 4.0% / 3.6% |
-| quiet day | 97.5% / 97.7% / 99.3% / 98.3% | 0.8% / 0.8% / 0.3% / 0.7% |
+| normal | 87.9% / 90.3% / 97.8% / 94.5% | 2.5% / 1.8% / 0.6% / 1.1% |
+| network outage | 79.2% / 85.5% / 91.8% / 88.7% | 5.4% / 3.0% / 2.1% / 2.6% |
+| billing day | 77.1% / 84.8% / 94.1% / 91.2% | 5.2% / 2.8% / 1.6% / 1.7% |
+| afternoon promo | 76.4% / 85.7% / 96.6% / 90.7% | 5.4% / 2.4% / 0.6% / 1.7% |
+| late outage | 84.0% / 88.3% / 94.9% / 92.6% | 4.0% / 2.2% / 1.4% / 1.6% |
+| big outage | 71.6% / 78.8% / 84.7% / 82.8% | 9.3% / 5.4% / 4.5% / 4.7% |
+| complaint storm | 81.1% / 87.3% / 92.0% / 91.1% | 5.5% / 2.7% / 2.5% / 2.1% |
+| quiet day | 96.7% / 97.1% / 99.4% / 97.5% | 0.6% / 0.5% / 0.2% / 0.5% |
 
-The Erlang C plan misses the 80% target on billing day, afternoon promo and big outage; every other policy meets it everywhere.
+The Erlang C plan misses the 80% SLA target on 4 scenarios (network outage, billing day, afternoon promo, big outage) and the reactive rule on 1 (big outage); the margin rule and the RL agent meet it on all 8.
 
 ### What this shows
 
-- **The RL agent beats the classic Erlang C plan** on 7 of 8 scenarios (by 194 to 2,686 €/day), and the reactive rule on 5 of 8.
-- **No policy wins everywhere.** On average, the margin rule and the RL agent are tied (8,827 € vs 8,864 €/day). The margin rule is better when the extra calls are general calls (a fixed +4 general advisors is exactly right there); the RL agent is better when the surprise is elsewhere or at an unusual time (late outage, big outage, complaint storm) and on the quiet day.
-- **The RL agent is the most robust:** on every scenario it is at most 717 €/day from the best policy, the smallest worst case of the four. A fixed margin wastes money when calls are fewer than expected (quiet day: +900 € vs Erlang C) and is not always enough when the surprise hits another queue.
-- **It really reacts** (measured from 10h to 13h, compared with the Erlang C plan): the 3 agents add +1.0 to +1.7 advisors on a normal day, +3.1 to +4.6 during the outage (mostly on the technical queue), and 0 to +1.3 on the quiet day.
-- **The 3 agents agree closely** (small ± spread), so the result does not depend on one lucky training.
-- On the quiet day, the simple Erlang C plan is still the cheapest: the agent keeps a small safety margin it does not need.
+- **The RL agent clearly beats the classic Erlang C plan:** cheaper on 7 of 8 scenarios, by 320 to 2,545 €/day, significantly every time; only on the quiet day is the plan cheaper (by 393 €/day).
+- **On average it is the cheapest policy, but by a small margin:** 7,003 €/day against 7,065 € for the reactive rule and 7,154 € for the margin rule. Against the two tuned rules, most differences are not significant: a well-tuned simple rule is a strong opponent.
+- **It is the most robust:** on every scenario it is at most 570 €/day from the best policy, the smallest worst case of the four (reactive rule 842 €, margin rule 1,198 €). Each rule has a weak spot: the margin rule pays for idle staff on the quiet day (+1,197 €), the reactive rule reacts late to general-call surges (afternoon promo +842 €).
+- **Where it wins and loses:** best on 4 of 8 scenarios (normal, late outage, big outage, complaint storm). The margin rule is best when the extra calls are general calls (billing day, afternoon promo), because its fixed general margin is exactly right there; the simple rules are cheaper on the quiet day, where the agent keeps a safety margin it does not need.
+- **The 3 agents agree** (spread of 35 to 327 €/day), so the result does not depend on one lucky training.
 
 ### What drives the agent's decisions (XAI)
 
-Permutation importance (`python -m workforce.explain`, chart `what_matters.html`): each input is shuffled across about 1,000 situations and we measure how much the decisions change. The most important inputs are, in order: **complaint calls received vs forecast**, **priority on**, **technical calls received vs forecast**, **time of day**, **general calls received vs forecast**. The agent watches the calls coming in, not the clock. The number of customers waiting at the decision moment matters very little: it is usually 0 or 1, because customers are either answered quickly or hang up.
+Permutation importance (`python -m workforce.explain`, chart `what_matters.html`): each input is shuffled across many situations and we measure how much the decisions change. The most important inputs are, in order: **complaint calls received vs forecast** (0.99), **technical calls received vs forecast** (0.77), **time of day** (0.77), **general calls received vs forecast** (0.72), **priority on** (0.71) and **forecast for the next hour** (0.69). The agent mainly watches the calls coming in compared with what was expected, which is how it notices a surprise without being told about it.
 
 The charts in `workforce/models/explain/`: `timeline_<scenario>.html` (advisors on duty for each policy every 15 minutes, with calls received ÷ forecast), `corrections.html` (advisors added or removed vs the plan, per hour and queue), `what_matters.html`.
 
@@ -153,11 +154,13 @@ The charts in `workforce/models/explain/`: `timeline_<scenario>.html` (advisors 
 
 1. **The price of bad service decides what the agent learns.** With cheap prices (8 € per hang-up, 2 € per late answer), the first agent cut staff by a third and let service collapse (SLA 71%, 13% hang-ups): it did exactly what the reward asked. With 30 € / 5 €, the gain was not significant; with 50 € / 8 €, significant. We kept 50 € / 8 €.
 2. **The first agent only learned a margin.** Trained on 4 fixed scenarios and unable to see incoming calls, it added roughly the same advisors every day. The XAI timeline showed it; a simple "Erlang C + fixed margin" rule then did as well as the agent. That rule became the margin rule.
-3. **The fix:** the agent now sees calls received vs forecast, and trains on random surprise days, so a fixed margin is no longer enough. It now reacts, as shown above.
+3. **The fix:** the agent now sees calls received vs forecast, and trains on random surprise days, so a fixed margin is no longer enough. It now reacts.
+4. **From invented to real numbers.** The first simulation used plausible but invented values. It is now calibrated on 444,448 real calls. A review of the first calibration found that dates were read as 2099 and the wrong days of the week were used, and that the roster had no room left for surprises (the Erlang C plan needed 20 of 21 advisors at peak). After fixing both, the reactive rule became much stronger (it finally had advisors to call in), and the comparison above was rerun from scratch.
 
 ## Limits (to say in the report)
 
-- Call volumes, durations, patience and the 25 €/hour cost are **placeholders**, to calibrate on public call center data (Technion) and on statistics from real LangGraph calls.
+- The center is calibrated on a **bank** call center from 1999, not a telecom operator; the complaint duration is an assumption (the longest bank call type). Phase 3 will use call durations from CallVerse's own LangGraph calls.
+- The daily volume of 1,050 calls, the call mix (55/30/15%) and the 25 €/hour cost are team choices, not measured values.
 - Satisfaction is a placeholder formula based on waiting time, until it comes from the client agent.
 - The result depends on the reward prices (50 € / 8 €), a business choice the team should agree on.
 - The agent changes its requests often (it calls advisors in and sends them home after the 1-hour minimum more often than a real manager would; 4 to 7 queue switches per day). A small cost per staffing change in the reward would make it steadier.

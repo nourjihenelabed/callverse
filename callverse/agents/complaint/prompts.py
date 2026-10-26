@@ -41,8 +41,9 @@ Règles de l'entreprise (utilise seulement celles-ci) :
 {rules}
 
 Réponds avec :
-- actions : 1 à 4 actions concrètes, courtes, en français, pour le conseiller.
-- compensation_cents : le geste commercial en centimes d'euro (500 = 5 €), selon la grille.
+- actions : 1 à 4 actions concrètes, courtes, en français, pour le conseiller. Chaque action une seule fois.
+- compensation_cents : le geste commercial en centimes d'euro, selon la grille.
+  Exemples : 5 € = 500, 10 € = 1000, 20 € = 2000. Jamais un montant inventé.
   Un remboursement d'un montant facturé à tort n'est PAS une compensation : mets-le dans les actions.
   Mets 0 si la grille ne prévoit rien.
 - rules_used : les numéros [n] des règles qui justifient ta décision.

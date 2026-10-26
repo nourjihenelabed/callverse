@@ -68,6 +68,60 @@ def check_compensation(severity: int, cents: int) -> tuple[int, bool]:
     return cents, cents > AUTO_CAP_CENTS[severity]
 
 
+# compensation_grid.md, "Coupure de service": the box price / 30, per day without service, after 48 hours
+DAILY_OUTAGE_CREDIT_CENTS = {"box_fibre": 117, "box_adsl": 83}
+OUTAGE_MIN_DAYS = 3                     # "plus de 48 heures"
+DAY_WORDS = {"deux": 2, "trois": 3, "quatre": 4, "cinq": 5, "six": 6, "sept": 7, "huit": 8, "neuf": 9, "dix": 10}
+WEEK_WORDS = {"une": 7, "deux": 14}
+
+
+def outage_days(text: str) -> int | None:
+    """How many days the customer says the outage lasts: "coupé depuis 4 jours" -> 4, "une semaine" -> 7."""
+    plain = _plain(text)
+    if match := re.search(r"\b(\d+)\s*jours?\b", plain):
+        return int(match.group(1))
+    if match := re.search(rf"\b({'|'.join(DAY_WORDS)})\s+jours?\b", plain):
+        return DAY_WORDS[match.group(1)]
+    if match := re.search(rf"\b({'|'.join(WEEK_WORDS)})\s+semaines?\b", plain):
+        return WEEK_WORDS[match.group(1)]
+    return None
+
+
+def outage_credit(days: int | None, box_code: str | None) -> int | None:
+    """The outage credit of the grid, or None when it does not apply (or the facts are unknown)."""
+    if days is None or box_code not in DAILY_OUTAGE_CREDIT_CENTS or days < OUTAGE_MIN_DAYS:
+        return None
+    return days * DAILY_OUTAGE_CREDIT_CENTS[box_code]
+
+
+def money_severity(text: str) -> int:
+    """The lowest severity the customer's own numbers allow (complaint_procedures.md): money lost is at
+    least 2, a gap of more than 50 € is 3. "75,94 € au lieu de 37,97 €" -> 2. No amount -> 1."""
+    amounts = [float(a.replace(",", ".")) for a in re.findall(r"(\d+(?:,\d{1,2})?)\s*(?:€|euros?)", text)]
+    if not amounts:
+        return 1
+    return 3 if max(amounts) - min(amounts) > 50 else 2
+
+
+def tidy_compensation(category: str, cents: int) -> int:
+    """Turns the model's amount into one the grid can give.
+
+    The grid gives whole euros (5 €, 10 €...), except the outage credit of the technical
+    category (1,17 € or 0,83 € per day, at least 2 days, so never under 1 €). An amount
+    under 1 € is a model mistake (cents and euros mixed up): no compensation.
+    """
+    if cents < 100:
+        return 0
+    return cents if category == "technical" else round(cents / 100) * 100
+
+
+def same_step(a: str, b: str) -> bool:
+    """True when two actions are the same step, even with another capital letter or a few
+    more words: "vérifier la facture" and "Vérifier la facture concernée avant toute proposition."."""
+    key_a, key_b = (" ".join(re.findall(r"[a-z0-9]+", _plain(text))) for text in (a, b))
+    return bool(key_a and key_b) and (key_a.startswith(key_b) or key_b.startswith(key_a))
+
+
 def escalation_reasons(
     *, legal_threat: bool, repeat_count: int, churn_risk: float | None, over_cap: bool
 ) -> list[str]:

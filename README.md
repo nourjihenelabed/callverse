@@ -156,3 +156,38 @@ Never put your `.env` file on GitHub. It is already blocked, so `git add .` will
 1. Install Chroma: `pip install -e ".[dev,rag]"`. If Windows blocks it, set `rag: store: "local"` in your own copy of `settings.yaml` (don't push that change) and skip this step.
 2. With Ollama running, build the index: `python scripts/build_index.py "Combien coûte la Box Fibre ?"`
 3. Build it again whenever a file in `data/policies/` changes.
+
+### 5. Try the advisor
+
+With Ollama running, the database filled and the rules indexed:
+
+```bash
+python scripts/try_advisor.py                  # 4 prepared questions
+python scripts/try_advisor.py --chat           # type your own messages
+```
+
+It shows what the advisor understood, the tools it used and its answer. See `callverse/agents/advisor/README.md`.
+
+### 6. Run whole pretend calls
+
+The AI customer talks to the AI advisor from start to finish:
+
+```bash
+python scripts/try_call.py                                         # 3 random calls
+python scripts/try_call.py --reason complaint_billing --persona demanding
+```
+
+After each call the reviewer's grades are printed, with the reason for each (`--short` hides the reasons).
+See `callverse/agents/client/README.md` and `callverse/agents/quality/README.md`. Complaint calls open real tickets: run `python scripts/seed_data.py` again to clean them.
+
+### 7. The scoreboard
+
+Run a batch of calls (saved in the database), then look at the results:
+
+```bash
+python scripts/run_calls.py --calls 50 --run night-1    # 1 to 2 hours; run it again to continue
+pip install -e ".[dashboard]"
+streamlit run dashboard/app.py                          # or: python scripts/build_report.py (one HTML page)
+```
+
+See `dashboard/README.md`.
