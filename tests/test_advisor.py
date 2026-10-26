@@ -274,3 +274,71 @@ def test_tool_call_written_as_text_is_run_not_said(monkeypatch, rules):
 def test_ordinary_text_starting_with_a_brace_is_kept():
     reply = agent.AIMessage('{"note": "pas un outil"}')
     assert agent.text_tool_call(reply, {"search_policies": None}) is reply
+
+
+def test_an_invented_compensation_is_replaced_by_the_decided_one():
+    state = complaint_call(escalate=False)                                   # the specialist decided 15 €
+    text = agent.finish("Je comprends. Le spécialiste a décidé de vous offrir une compensation de 20 €. "
+                        "Puis-je vous aider pour autre chose ?", state)
+    assert "20 €" not in text and "15,00 €" in text
+
+
+def test_a_refund_amount_is_not_touched():
+    state = complaint_call(escalate=False)
+    text = "Nous vous remboursons 27,98 € facturés à tort. Puis-je vous aider pour autre chose ?"
+    assert agent.finish(text, state) == text
+
+
+def test_long_answers_are_cut_and_only_one_question_is_asked():
+    long = " ".join(f"Phrase {n}." for n in range(1, 9)) + " " + prompts.CLOSING
+    assert agent.tidy_answer(long) == " ".join(f"Phrase {n}." for n in range(1, agent.MAX_SENTENCES + 1)) + " " + prompts.CLOSING
+    two = f"Je peux le changer. {prompts.ASK_CONSENT} {prompts.CLOSING}"
+    assert agent.tidy_answer(two) == f"Je peux le changer. {prompts.ASK_CONSENT}"
+
+
+def test_the_whole_catalogue_is_always_given():
+    prompt = agent.system_prompt(call("Bonjour"))
+    for name, cents in tools.catalogue().values():
+        assert f"{name} : {tools.euros(cents)}/mois" in prompt
+    assert "offre spéciale" in prompt                                  # no invented loyalty deals
+
+
+def test_placeholders_and_stage_directions_are_removed():
+    assert agent.clean("Je m'appelle [Nom], je suis là pour vous aider. (pause) Oui, c'est bien ainsi.") == \
+        "Je suis là pour vous aider. Oui, c'est bien ainsi."
+
+
+def test_no_closing_question_after_another_question():
+    assert agent.tidy_answer(f"Quel est le montant exact ? {prompts.CLOSING}") == "Quel est le montant exact ?"
+
+
+def said_before(text: str) -> CallState:
+    return call("Bonjour", "Et alors, quel est le prix ?").model_copy(update={"messages": [
+        Message(role="client", content="Bonjour"), Message(role="advisor", content=text),
+        Message(role="client", content="Et alors, quel est le prix ?")]})
+
+
+def test_a_repeated_answer_is_asked_again_once(monkeypatch):
+    old = "Je suis désolé, je n'ai pas trouvé d'information sur ce coût. Puis-je vous rappeler ?"
+    model = use(monkeypatch, ScriptedModel([old, "Le prix est de 9,99 € par mois."]))
+    text = agent.advisor_node(said_before(old))["messages"][0].content
+    assert text.startswith("Le prix est de 9,99 €")
+    assert prompts.DONT_REPEAT in model.sent[-1][-1].content
+
+
+def test_a_second_repetition_gives_a_short_honest_answer(monkeypatch):
+    old = "Je suis désolé, je n'ai pas trouvé d'information sur ce coût. Puis-je vous rappeler ?"
+    use(monkeypatch, ScriptedModel([old, old]))
+    assert agent.advisor_node(said_before(old))["messages"][0].content == prompts.NOTHING_MORE
+
+
+def test_no_consent_question_when_nothing_was_asked(monkeypatch):
+    use(monkeypatch, ScriptedModel([f"Vous avez la Box Fibre à 34,99 €. {prompts.ASK_CONSENT}"]))
+    text = agent.advisor_node(call("Bonjour, je suis client depuis 21 mois."))["messages"][0].content
+    assert prompts.ASK_CONSENT not in text and text.endswith(prompts.CLOSING)
+
+
+def test_consent_question_kept_when_the_customer_asks_a_change(monkeypatch):
+    use(monkeypatch, ScriptedModel([f"L'option TV coûte 7,99 €. {prompts.ASK_CONSENT}"]))
+    text = agent.advisor_node(call("Je voudrais ajouter l'option TV."))["messages"][0].content
+    assert text.endswith(prompts.ASK_CONSENT)

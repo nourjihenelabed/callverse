@@ -54,3 +54,76 @@ class KeywordModel(ScriptedModel):
                 return schema(intent="complaint_billing" if complaint else "check_invoice", is_complaint=complaint)
 
         return Structured()
+
+
+# ---------------------------------------------------------------- the pretend customer
+
+FAKE_FACTS = {"codes": ["box_fibre", "forfait_mobile"], "offers": "Box Fibre, Forfait Mobile 100 Go",
+              "bill": "49,98 €", "double_bill": "99,96 €", "box": "Box Fibre", "contract": "sans engagement",
+              "payment": "prélèvement automatique", "tenure": 14, "other_offer": "Box ADSL",
+              "other_option": "TV", "churn_risk": 0.4}
+
+
+class StructuredScript:
+    """A fake model whose structured answers are given in advance, one per call."""
+
+    def __init__(self, answers=()):
+        self.answers = list(answers)
+        self.sent = []
+
+    def with_structured_output(self, schema):
+        model = self
+
+        class Structured:
+            def invoke(self, prompt):
+                model.sent.append(list(prompt) if isinstance(prompt, list) else prompt)
+                answer = model.answers.pop(0)
+                if isinstance(answer, Exception):
+                    raise answer
+                return schema(**answer)
+
+        return Structured()
+
+
+class PoliteCustomer:
+    """For the whole-call tests: opens with the stub's sentences, then accepts the first answer."""
+
+    def with_structured_output(self, schema):
+        class Structured:
+            def invoke(self, prompt):
+                if schema.__name__ == "Opening":
+                    complaint = "réclamation" in str(prompt)
+                    return schema(message="Bonjour, ma facture est beaucoup trop élevée ce mois-ci, ce n'est pas normal."
+                                  if complaint else "Bonjour, je voudrais comprendre ma dernière facture.")
+                return schema(decision="accept", message="D'accord, merci beaucoup. Au revoir.", satisfaction=4)
+
+        return Structured()
+
+
+# ---------------------------------------------------------------- the reviewer
+
+class FixedJudge:
+    """A fake reviewer model: gives the grades it was told to (or 4 everywhere)."""
+
+    def __init__(self, answer=None, fail=False):
+        grade = {"score": 4, "explanation": "Réponse claire."}
+        self.answer = answer or {"relevance": grade, "accuracy": grade, "empathy": grade,
+                                 "recommendations": ["Reformuler la demande du client."]}
+        self.fail = fail
+        self.sent = []
+
+    def with_structured_output(self, schema):
+        judge = self
+
+        class Structured:
+            def invoke(self, prompt):
+                judge.sent.append(prompt)
+                if judge.fail:
+                    raise ValueError("the model wrote something that is not JSON")
+                return schema(**judge.answer)
+
+        return Structured()
+
+
+FAKE_REVIEW_FACTS = {"summary": '{"offres": ["Box Fibre (34,99 €/mois)", "Forfait Mobile 100 Go (14,99 €/mois)"]}',
+                     "bill_cents": 4998, "churn_risk": 0.4, "prices": {"box_fibre": 3499, "forfait_mobile": 1499}}

@@ -1,6 +1,6 @@
 """Shared test setup.
 
-The complaint specialist and the advisor normally use the AI model, the database and the
+The pretend customer, the complaint specialist, the advisor and the reviewer normally use the AI model, the database and the
 rules search. Here they are swapped for offline fakes, so `pytest` still needs no Ollama and no PostgreSQL,
 and never writes tickets into your real database.
 """
@@ -8,8 +8,10 @@ and never writes tickets into your real database.
 import pytest
 
 from callverse.agents.advisor import agent as advisor
+from callverse.agents.client import agent as client
 from callverse.agents.complaint import steps
-from fakes import KeywordModel
+from callverse.agents.quality import agent as quality
+from fakes import FAKE_FACTS, FAKE_REVIEW_FACTS, FixedJudge, KeywordModel, PoliteCustomer
 
 
 def offline_tools() -> steps.Tools:
@@ -32,3 +34,17 @@ def advisor_offline(monkeypatch):
     """A fake advisor model that reads no database and no index (test_advisor.py tests the real reads)."""
     monkeypatch.setattr(advisor, "get_model", lambda: KeywordModel(["Votre facture comprend votre forfait."]))
     monkeypatch.setattr(advisor, "prefetch", lambda state: ("", []))
+
+
+@pytest.fixture(autouse=True)
+def client_offline(monkeypatch):
+    """A fake customer who accepts the first answer, with a made-up account (test_client.py tests the real one)."""
+    monkeypatch.setattr(client, "get_model", lambda: PoliteCustomer())
+    monkeypatch.setattr(client, "get_facts", lambda customer_id: dict(FAKE_FACTS))
+
+
+@pytest.fixture(autouse=True)
+def reviewer_offline(monkeypatch):
+    """A fake reviewer model and a made-up account (test_quality.py tests the real checks)."""
+    monkeypatch.setattr(quality, "get_model", lambda: FixedJudge())
+    monkeypatch.setattr(quality, "get_facts", lambda customer_id: dict(FAKE_REVIEW_FACTS))
