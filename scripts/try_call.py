@@ -8,7 +8,8 @@ Run it from the project folder, with Ollama running, the database filled
     python scripts/try_call.py --reason complaint_billing --persona demanding
     python scripts/try_call.py --customer 7590-VHVEG --reason lost_sim
 
-It prints each conversation, the outcome and the customer's satisfaction.
+It prints each conversation, the outcome, the customer's satisfaction and the reviewer's report
+(a grade from 1 to 5 for each of the 6 criteria, with the reason). Add --short to hide the reasons.
 A call takes about 1 to 3 minutes on a laptop (several AI answers per turn).
 Note: complaint calls open real tickets in your database. Run seed_data.py again to clean them.
 """
@@ -27,6 +28,20 @@ from callverse.graph import run_call  # noqa: E402
 from callverse.state import CallState  # noqa: E402
 
 LABEL = {"client": "CLIENT  ", "advisor": "ADVISOR "}
+
+
+def show_review(done: CallState, short: bool) -> None:
+    r = done.quality_report
+    if r is None:
+        return
+    escalation = "" if r.escalation_correct is None else f"   escalation correct: {r.escalation_correct}"
+    print(f"  REVIEW: overall {r.overall:.1f}/5   "
+          + "  ".join(f"{name} {s.score}" for name, s in r.scores.items()) + escalation)
+    if not short:
+        for name, s in r.scores.items():
+            print(f"    {name} {s.score}/5: {s.explanation}")
+        for tip in r.recommendations:
+            print(f"    tip: {tip}")
 
 
 def show(done: CallState, seconds: float) -> None:
@@ -48,6 +63,7 @@ def main() -> None:
     parser.add_argument("--customer", help="a customer id; random if not given")
     parser.add_argument("--reason", choices=sorted(REASONS), help="random if not given")
     parser.add_argument("--persona", choices=sorted(PERSONAS), help="random if not given")
+    parser.add_argument("--short", action="store_true", help="grades only, without the reasons")
     args = parser.parse_args()
 
     rng = random.Random(args.seed)
@@ -60,12 +76,15 @@ def main() -> None:
         start = time.time()
         done = run_call(call)
         show(done, time.time() - start)
-        outcomes.append((done.outcome, done.satisfaction))
+        show_review(done, args.short)
+        outcomes.append((done.outcome, done.satisfaction, done.quality_report.overall if done.quality_report else None))
 
     if len(outcomes) > 1:
-        average = sum(s for _, s in outcomes if s) / max(1, sum(1 for _, s in outcomes if s))
-        print(f"\n{len(outcomes)} calls: " + ", ".join(f"{o}" for o, _ in outcomes)
-              + f"   average satisfaction {average:.1f}/5")
+        satisfaction = [s for _, s, _ in outcomes if s]
+        quality = [q for _, _, q in outcomes if q]
+        print(f"\n{len(outcomes)} calls: " + ", ".join(o or "?" for o, _, _ in outcomes)
+              + f"   average satisfaction {sum(satisfaction) / max(1, len(satisfaction)):.1f}/5"
+              + f"   average quality {sum(quality) / max(1, len(quality)):.1f}/5")
 
 
 if __name__ == "__main__":

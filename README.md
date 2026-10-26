@@ -177,4 +177,5 @@ python scripts/try_call.py                                         # 3 random ca
 python scripts/try_call.py --reason complaint_billing --persona demanding
 ```
 
-See `callverse/agents/client/README.md`. Complaint calls open real tickets: run `python scripts/seed_data.py` again to clean them.
+After each call the reviewer's grades are printed, with the reason for each (`--short` hides the reasons).
+See `callverse/agents/client/README.md` and `callverse/agents/quality/README.md`. Complaint calls open real tickets: run `python scripts/seed_data.py` again to clean them.
