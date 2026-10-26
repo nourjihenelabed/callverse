@@ -90,10 +90,12 @@ def test_writing_to_a_database(tmp_path):
 @pytest.mark.skipif(not list((ROOT / "data" / "raw").glob("*Telco-Customer-Churn*.csv")),
                     reason="IBM CSV not in data/raw/")
 def test_full_ibm_file():
-    rows, _ = seed.build_customers(seed.load_ibm(seed.find_ibm_csv()))
+    rows, products = seed.build_customers(seed.load_ibm(seed.find_ibm_csv()))
+    model = seed.add_churn_risk(rows, products)
     complaint_rows, _ = seed.build_complaints(rows)
     assert len(rows) == 7043
     assert all(0 <= r["churn_risk"] <= 0.95 for r in rows)
+    assert model.metrics["model_on_test"]["auc"] > model.metrics["placeholder_rule_on_test"]["auc"]
     repeat = {}
     for c in complaint_rows:
         if c["status"] == "unresolved":

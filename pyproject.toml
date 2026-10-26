@@ -17,6 +17,7 @@ dependencies = [
     "langgraph>=1.0",
     "langchain-ollama>=1.0",
     "simpy>=4.1",
+    "numpy>=1.26",                  # the churn model (callverse/churn.py)
 ]
 
 [project.optional-dependencies]
