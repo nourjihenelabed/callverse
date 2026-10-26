@@ -11,6 +11,8 @@ The order of a call:
 
 - The call ends when the client sets an outcome, or when it reaches
   call.max_turns in settings.yaml (then the outcome is "abandoned").
+- After a complaint call, the complaint specialist updates its ticket with the
+  customer's answer (complaint_follow_up), then the reviewer runs.
 - The reviewer always runs last.
 
 Usage:
@@ -40,8 +42,15 @@ def end_call(state: CallState) -> dict:
     return {}
 
 
+def to_review(state: CallState) -> str:
+    """The call is over: a complaint with a ticket goes through the follow-up first."""
+    if state.complaint_result is not None and state.complaint_result.ticket_id:
+        return "complaint_follow_up"
+    return "quality"
+
+
 def after_client(state: CallState) -> str:
-    return "quality" if state.outcome is not None else "advisor"
+    return to_review(state) if state.outcome is not None else "advisor"
 
 
 def after_advisor(state: CallState) -> str:
@@ -59,14 +68,16 @@ def build_graph():
     graph.add_node("client", client.client_node)
     graph.add_node("advisor", advisor.advisor_node)
     graph.add_node("complaint", complaint.complaint_node)
+    graph.add_node("complaint_follow_up", complaint.follow_up_node)
     graph.add_node("end_call", end_call)
     graph.add_node("quality", quality.quality_node)
 
     graph.add_edge(START, "client")
-    graph.add_conditional_edges("client", after_client, ["advisor", "quality"])
+    graph.add_conditional_edges("client", after_client, ["advisor", "complaint_follow_up", "quality"])
     graph.add_conditional_edges("advisor", after_advisor, ["complaint", "client", "end_call"])
     graph.add_edge("complaint", "advisor")
-    graph.add_edge("end_call", "quality")
+    graph.add_conditional_edges("end_call", to_review, ["complaint_follow_up", "quality"])
+    graph.add_edge("complaint_follow_up", "quality")
     graph.add_edge("quality", END)
 
     return graph.compile()

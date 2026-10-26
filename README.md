@@ -156,3 +156,14 @@ Never put your `.env` file on GitHub. It is already blocked, so `git add .` will
 1. Install Chroma: `pip install -e ".[dev,rag]"`. If Windows blocks it, set `rag: store: "local"` in your own copy of `settings.yaml` (don't push that change) and skip this step.
 2. With Ollama running, build the index: `python scripts/build_index.py "Combien coûte la Box Fibre ?"`
 3. Build it again whenever a file in `data/policies/` changes.
+
+### 5. Try the advisor
+
+With Ollama running, the database filled and the rules indexed:
+
+```bash
+python scripts/try_advisor.py                  # 4 prepared questions
+python scripts/try_advisor.py --chat           # type your own messages
+```
+
+It shows what the advisor understood, the tools it used and its answer. See `callverse/agents/advisor/README.md`.
