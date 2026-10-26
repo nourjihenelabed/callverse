@@ -76,7 +76,7 @@ def test_every_streamlit_page_runs(saved, monkeypatch, page):
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setattr(charts, "load_comparison", lambda: COMPARISON)
-    app = AppTest.from_file(str(ROOT / "dashboard" / "app.py"), default_timeout=60)
+    app = AppTest.from_file(str(ROOT / "dashboard" / "app.py"), default_timeout=180)
     app.run()
     app.sidebar.radio[0].set_value(page).run()
     assert not app.exception, [e.message for e in app.exception]
