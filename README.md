@@ -179,3 +179,15 @@ python scripts/try_call.py --reason complaint_billing --persona demanding
 
 After each call the reviewer's grades are printed, with the reason for each (`--short` hides the reasons).
 See `callverse/agents/client/README.md` and `callverse/agents/quality/README.md`. Complaint calls open real tickets: run `python scripts/seed_data.py` again to clean them.
+
+### 7. The scoreboard
+
+Run a batch of calls (saved in the database), then look at the results:
+
+```bash
+python scripts/run_calls.py --calls 50 --run night-1    # 1 to 2 hours; run it again to continue
+pip install -e ".[dashboard]"
+streamlit run dashboard/app.py                          # or: python scripts/build_report.py (one HTML page)
+```
+
+See `dashboard/README.md`.
