@@ -30,6 +30,21 @@ COMPARISON = {s: {**{p: {**KPIS, "total_cost_eur": 3500 + 100 * i} for i, p in e
               for s in ("normal", "network_outage")}
 
 
+TWIN = {"run": "demo", "target_fcr": 0.8, "callback_share": 0.5,
+        "measured": {"calls": 30, "fcr": 0.5, "queues": {q: {"calls": 10, "fcr": 0.5, "to_complaint": 0.1,
+                                                              "avg_turns": 3} for q in ("general", "technical", "complaint")}},
+        "load": {"volume_factor": 1.25, "call_mix": {"general": 0.5, "technical": 0.3, "complaint": 0.2},
+                 "repeat_factor": {"general": 1.25, "technical": 1.25, "complaint": 1.25}},
+        "results": {name: {"calls": 1000, "sla": 0.85, "abandonment_rate": 0.03, "staff_cost_eur": 4000,
+                           "total_cost_eur": cost} for name, cost in
+                    [("As calibrated", 6000), ("Ignored", 8500), ("Planned", 7300), ("Better advisor", 6800)]}}
+
+
+def test_twin_tables_and_chart():
+    assert len(charts.twin_rows(TWIN)) == 4 and charts.twin_costs(TWIN).data
+    assert charts.twin_measured_rows(TWIN)[0]["Resolved first time"] == "50%"
+
+
 @pytest.fixture
 def saved(engine):  # noqa: F811
     for n, (reason, persona) in enumerate([("check_invoice", "calm"), ("complaint_billing", "dissatisfied")]):
@@ -57,8 +72,10 @@ def test_missing_workforce_results_are_not_an_error(tmp_path):
     assert charts.load_comparison(tmp_path / "comparison.json") is None
 
 
-def test_report_has_the_calls_their_reasons_and_works_offline(saved):
+def test_report_has_the_calls_their_reasons_and_works_offline(saved, monkeypatch):
+    monkeypatch.setattr(charts, "load_twin", lambda: TWIN)
     page = build_report.build(saved, COMPARISON, "Test")
+    assert "what the AI calls change for staffing" in page
     assert page.startswith("<!doctype html>") and page.count("plotly.js") >= 1
     assert "Why these grades" in page and "Vérification automatique" in page
     assert saved[0]["messages"][0]["content"][:30] in page
@@ -67,7 +84,7 @@ def test_report_has_the_calls_their_reasons_and_works_offline(saved):
 
 
 def test_report_without_calls_says_what_to_run():
-    assert "run_calls.py" in build_report.build([], None, "Empty")
+    assert "run_calls.py" in build_report.build([], None, "Empty", include_twin=False)
 
 
 @pytest.mark.skipif(importlib.util.find_spec("streamlit") is None, reason="Streamlit not installed")
@@ -76,6 +93,7 @@ def test_every_streamlit_page_runs(saved, monkeypatch, page):
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setattr(charts, "load_comparison", lambda: COMPARISON)
+    monkeypatch.setattr(charts, "load_twin", lambda: TWIN)
     app = AppTest.from_file(str(ROOT / "dashboard" / "app.py"), default_timeout=180)
     app.run()
     app.sidebar.radio[0].set_value(page).run()

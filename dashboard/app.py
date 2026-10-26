@@ -153,10 +153,12 @@ elif page == "One call":
 
 else:
     st.title("Workforce manager")
-    comparison = charts.load_comparison()
+    comparison, twin = charts.load_comparison(), charts.load_twin()
+
+    st.subheader("RL floor manager against Erlang C and the rules")
     if comparison is None:
-        st.info("No workforce results on this computer yet. Run:\n\n`python scripts/run_workforce.py --skip-calibration`"
-                "\n\nor only the comparison: `python -m workforce.compare`")
+        st.info("Not on this computer yet. Run `python scripts/run_workforce.py --skip-calibration`, "
+                "or only the comparison: `python -m workforce.compare`")
     else:
         st.write("The same 30 test days per scenario for every policy (days never used in training). "
                  "Total cost = staff + the price of bad service (hang-ups, waiting).")
@@ -168,9 +170,28 @@ else:
                           width="stretch")
         right.plotly_chart(charts.wfm_metric(comparison, "abandonment_rate", "Customers who hang up", percent=True),
                            width="stretch")
-        explain = charts.COMPARISON_PATH.parent / "explain"
-        if explain.exists():
-            st.subheader("Why the RL agent decides what it decides")
-            st.write("Open these pages in your browser (made by `python -m workforce.explain`):")
-            for page_file in sorted(explain.glob("*.html")):
-                st.code(str(page_file), language=None)
+
+    st.subheader("The loop: what the AI calls change for staffing")
+    if twin is None:
+        st.info("Not computed yet. After a batch of calls, run: `python -m workforce.twin --run night-1`")
+    else:
+        m = twin["measured"]
+        st.write(f"Measured on **{m['calls']} AI calls** (batch `{twin.get('run', 'all')}`): "
+                 f"**{m['fcr']:.0%}** resolved at the first contact. If {twin['callback_share']:.0%} of "
+                 f"unresolved customers call back, the center gets **{twin['load']['volume_factor'] - 1:+.0%} "
+                 f"calls**, and calls that became complaints move to the complaint queue. Call durations "
+                 f"stay those of the real Technion data.")
+        st.dataframe(charts.twin_measured_rows(twin), width="stretch", hide_index=True)
+        st.dataframe(charts.twin_rows(twin), width="stretch", hide_index=True)
+        st.plotly_chart(charts.twin_costs(twin), width="stretch")
+        names = list(twin["results"])
+        saving = twin["results"][names[2]]["total_cost_eur"] - twin["results"][names[3]]["total_cost_eur"]
+        st.success(f"A better advisor ({twin['target_fcr']:.0%} resolved first time) would save "
+                   f"**{saving:,} € per day** in this center.")
+
+    explain = charts.COMPARISON_PATH.parent / "explain"
+    if explain.exists():
+        st.subheader("Why the RL agent decides what it decides")
+        st.write("Open these pages in your browser (made by `python -m workforce.explain`):")
+        for page_file in sorted(explain.glob("*.html")):
+            st.code(str(page_file), language=None)
