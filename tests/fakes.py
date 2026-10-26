@@ -98,3 +98,32 @@ class PoliteCustomer:
                 return schema(decision="accept", message="D'accord, merci beaucoup. Au revoir.", satisfaction=4)
 
         return Structured()
+
+
+# ---------------------------------------------------------------- the reviewer
+
+class FixedJudge:
+    """A fake reviewer model: gives the grades it was told to (or 4 everywhere)."""
+
+    def __init__(self, answer=None, fail=False):
+        grade = {"score": 4, "explanation": "Réponse claire."}
+        self.answer = answer or {"relevance": grade, "accuracy": grade, "empathy": grade,
+                                 "recommendations": ["Reformuler la demande du client."]}
+        self.fail = fail
+        self.sent = []
+
+    def with_structured_output(self, schema):
+        judge = self
+
+        class Structured:
+            def invoke(self, prompt):
+                judge.sent.append(prompt)
+                if judge.fail:
+                    raise ValueError("the model wrote something that is not JSON")
+                return schema(**judge.answer)
+
+        return Structured()
+
+
+FAKE_REVIEW_FACTS = {"summary": '{"offres": ["Box Fibre (34,99 €/mois)", "Forfait Mobile 100 Go (14,99 €/mois)"]}',
+                     "bill_cents": 4998, "churn_risk": 0.4, "prices": {"box_fibre": 3499, "forfait_mobile": 1499}}
