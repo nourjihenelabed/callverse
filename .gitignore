@@ -21,3 +21,6 @@ data/index/
 
 # Trained RL agents and comparison results (rebuild them with python -m workforce.train)
 workforce/models/
+
+# The HTML report (rebuild it with python scripts/build_report.py)
+dashboard/report.html
