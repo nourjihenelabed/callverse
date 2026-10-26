@@ -164,24 +164,25 @@ def build_customers(ibm_rows: list[dict]) -> tuple[list[dict], list[dict]]:
             "payment_method": PAYMENT_METHODS[row["PaymentMethod"]],
             "monthly_charge_cents": monthly,
             "total_charge_cents": monthly * tenure,
-            "churn_risk": None,               # filled after complaints are generated
+            "churn_risk": None,               # filled by add_churn_risk (the churn model)
             "churned": row["Churn"] == "Yes",
         })
         product_rows += [{"customer_id": row["customerID"], "product_code": p} for p in products]
     return customer_rows, product_rows
 
 
-def churn_risk(customer: dict, unresolved_complaints: int) -> float:
-    """PLACEHOLDER rule until the team trains a churn model. Never uses the churned label."""
-    risk = 0.10
-    if customer["contract"] == "sans_engagement":
-        risk += 0.30
-    if customer["tenure_months"] < 12:
-        risk += 0.20
-    if customer["payment_method"] == "paiement_en_ligne":
-        risk += 0.10
-    risk += 0.10 * unresolved_complaints
-    return round(min(risk, 0.95), 2)
+def add_churn_risk(customer_rows: list[dict], product_rows: list[dict]):
+    """Fills churn_risk with the churn model (callverse/churn.py), learned from the real IBM answers.
+    Returns the model, with its test results. The agents never see the churned column."""
+    from callverse import churn
+
+    model = churn.train(customer_rows, product_rows)
+    codes = {}
+    for p in product_rows:
+        codes.setdefault(p["customer_id"], set()).add(p["product_code"])
+    for customer in customer_rows:
+        customer["churn_risk"] = churn.risk_for_database(model, customer, codes.get(customer["customer_id"], ()))
+    return model
 
 
 # ---------------------------------------------------------------- complaints and tickets
@@ -251,14 +252,6 @@ def build_complaints(customer_rows: list[dict], seed: int = SEED) -> tuple[list[
         for _ in range(2):
             add(customer_id, category, REFERENCE_DATE - timedelta(days=rng.randint(5, 90)), True)
 
-    # 3. churn risk now that unresolved complaints are known
-    unresolved = {}
-    for c in complaint_rows:
-        if c["status"] == "unresolved":
-            unresolved[c["customer_id"]] = unresolved.get(c["customer_id"], 0) + 1
-    for customer in customer_rows:
-        customer["churn_risk"] = churn_risk(customer, unresolved.get(customer["customer_id"], 0))
-
     return complaint_rows, ticket_rows
 
 
@@ -281,6 +274,8 @@ def main() -> None:
 
     path = find_ibm_csv()
     customer_rows, product_rows = build_customers(load_ibm(path))
+    model = add_churn_risk(customer_rows, product_rows)
+    model.save()
     complaint_rows, ticket_rows = build_complaints(customer_rows)
     write_all(get_engine(), customer_rows, product_rows, complaint_rows, ticket_rows)
 
@@ -290,6 +285,11 @@ def main() -> None:
     print(f"customer_products: {len(product_rows)}")
     print(f"complaints:        {len(complaint_rows)} ({unresolved} unresolved)")
     print(f"tickets:           {len(ticket_rows)}")
+    test = model.metrics["model_on_test"]
+    old = model.metrics["placeholder_rule_on_test"]
+    high = sum(c["churn_risk"] >= 0.70 for c in customer_rows)
+    print(f"churn model:       AUC {test['auc']} on {model.metrics['test_customers']} unseen customers "
+          f"(old rule {old['auc']}), accuracy {test['accuracy']:.0%}; {high} customers at 0.70 or more")
 
 
 if __name__ == "__main__":
