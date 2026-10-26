@@ -281,7 +281,21 @@ def first_answer(model, state: CallState) -> tuple[str, list[ToolCall], list]:
 
 def finish(text: str, state: CallState) -> str:
     """The checks done by code on every answer, in order."""
-    return tell_escalation(tidy_answer(keep_compensation(text, state)), state)
+    text = no_consent_without_request(keep_compensation(text, state), state)
+    return tell_escalation(tidy_answer(text), state)
+
+
+CHANGE_REQUEST = re.compile(r"changer|modifier|ajouter|souscrire|activer|suspendre|résilier|annuler|passer à|"
+                            r"prendre|commander|je veux|je voudrais (le|la|l')|oui|d'accord|allez-y", re.I)
+
+
+def no_consent_without_request(text: str, state: CallState) -> str:
+    """"Voulez-vous que je le fasse maintenant ?" only when the customer asked for a change
+    (the model once asked it right after the customer said who they were)."""
+    if prompts.ASK_CONSENT not in text or CHANGE_REQUEST.search(last_client_message(state)):
+        return text
+    kept = [s for s in sentences(text) if prompts.ASK_CONSENT not in s]
+    return " ".join(kept + [prompts.CLOSING])
 
 
 def looks_like_tool_call(text: str) -> bool:

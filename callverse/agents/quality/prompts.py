@@ -42,4 +42,5 @@ MODEL = "Avis du modèle : "
 CODE = "Vérification automatique : "
 NOT_KEPT = ("Critique du modèle non retenue : {why}, la note du modèle ({score}/5) est remontée à 4.")
 NO_QUOTE = "la phrase citée ne figure pas dans l'appel"
+NO_DECISION = "il n'y a pas de décision du spécialiste dans cet appel"
 NO_SOURCE = "elle ne contredit ni le catalogue, ni le dossier, ni la décision du spécialiste"

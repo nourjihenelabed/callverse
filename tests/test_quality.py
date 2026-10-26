@@ -205,3 +205,10 @@ def test_a_decided_compensation_must_be_announced():
     assert report(silent).scores["compliance"].score == 3
     assert "5,00 €" in report(silent).scores["compliance"].explanation
     assert report(told).scores["compliance"].score == 5
+
+
+def test_no_specialist_decision_to_contradict_in_an_everyday_call():
+    invalid = {"score": 3, "explanation": "Contredit la décision.", "contradicts": "décision",
+               "quote": "Les forfaits mobiles ne sont pas liés aux box internet"}
+    r = report(MOBILE_CALL, judge=judge_says(invalid))
+    assert r.scores["accuracy"].score == 4 and "pas de décision du spécialiste" in r.scores["accuracy"].explanation

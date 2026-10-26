@@ -330,3 +330,15 @@ def test_a_second_repetition_gives_a_short_honest_answer(monkeypatch):
     old = "Je suis désolé, je n'ai pas trouvé d'information sur ce coût. Puis-je vous rappeler ?"
     use(monkeypatch, ScriptedModel([old, old]))
     assert agent.advisor_node(said_before(old))["messages"][0].content == prompts.NOTHING_MORE
+
+
+def test_no_consent_question_when_nothing_was_asked(monkeypatch):
+    use(monkeypatch, ScriptedModel([f"Vous avez la Box Fibre à 34,99 €. {prompts.ASK_CONSENT}"]))
+    text = agent.advisor_node(call("Bonjour, je suis client depuis 21 mois."))["messages"][0].content
+    assert prompts.ASK_CONSENT not in text and text.endswith(prompts.CLOSING)
+
+
+def test_consent_question_kept_when_the_customer_asks_a_change(monkeypatch):
+    use(monkeypatch, ScriptedModel([f"L'option TV coûte 7,99 €. {prompts.ASK_CONSENT}"]))
+    text = agent.advisor_node(call("Je voudrais ajouter l'option TV."))["messages"][0].content
+    assert text.endswith(prompts.ASK_CONSENT)

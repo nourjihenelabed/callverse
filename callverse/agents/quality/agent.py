@@ -172,6 +172,8 @@ def grounded_accuracy(grade, state: CallState) -> tuple[int, str]:
         return grade.score, text
     if grade.contradicts == "aucune":
         why = prompts.NO_SOURCE
+    elif grade.contradicts == "décision" and state.complaint_result is None:
+        why = prompts.NO_DECISION
     elif not quoted(grade.quote, state):
         why = prompts.NO_QUOTE
     else:
