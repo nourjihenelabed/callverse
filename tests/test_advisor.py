@@ -52,6 +52,11 @@ def rules(tmp_path, monkeypatch):
                         lambda q: real_search(q, k=2, embeddings=fake, index_dir=tmp_path / "index"))
 
 
+def answer_prompt(model):
+    """The instructions of the answer (the understanding step, if any, is sent as plain text before)."""
+    return next(sent for sent in model.sent if isinstance(sent, list))[0]
+
+
 def use(monkeypatch, model):
     monkeypatch.setattr(agent, "get_model", lambda: model)
     return model
@@ -210,7 +215,7 @@ def test_specialist_decision_is_given_to_the_model(monkeypatch):
     model = use(monkeypatch, ScriptedModel(["Nous corrigeons votre facture et vous remboursons 15 €."]))
     update = agent.advisor_node(complaint_call(escalate=False))
 
-    system = model.sent[0][0]
+    system = answer_prompt(model)
     assert isinstance(system, SystemMessage)
     assert "Corriger la facture" in system.content and "15,00 €" in system.content
     assert system.content.rstrip().endswith(prompts.COMPLAINT_REMINDER.strip()[-60:])   # the last words it reads
@@ -221,7 +226,7 @@ def test_specialist_decision_is_given_to_the_model(monkeypatch):
 def test_escalated_complaint_promises_nothing_and_hides_the_reason(monkeypatch):
     model = use(monkeypatch, ScriptedModel(["Je comprends."]))
     agent.advisor_node(complaint_call(escalate=True))
-    system = model.sent[0][0].content
+    system = answer_prompt(model).content
     assert "résiliation" not in system                       # the churn risk is internal
     assert "pistes" in system and "AUCUN remboursement" in system
 

@@ -49,6 +49,7 @@ FALLBACK_ANSWER = ("Je suis désolé, je n'ai pas pu trouver cette information. 
 class Understanding(BaseModel):
     intent: str = Field(description="what the customer wants, a few English words with underscores")
     is_complaint: bool = Field(description="true if the customer complains and expects a fix or a gesture")
+    wants_to_leave: bool = Field(default=False, description="true if the customer wants to cancel or leave")
 
 
 def get_model():
@@ -60,15 +61,20 @@ def advisor_node(state: CallState) -> dict:
     model = get_model()
     update = {}
 
-    # 1. understand the customer's last message (until a complaint has been handled)
-    if state.complaint_result is None:
+    # 1. understand the customer's last message (until a complaint and a departure have been handled)
+    if state.complaint_result is None or state.retention is None:
         understood = understand(model, state)
-        if state.intent is None or (understood.is_complaint and not state.is_complaint):
-            update["intent"] = understood.intent
-        update["is_complaint"] = state.is_complaint or understood.is_complaint
+        if state.complaint_result is None:
+            if state.intent is None or (understood.is_complaint and not state.is_complaint):
+                update["intent"] = understood.intent
+            update["is_complaint"] = state.is_complaint or understood.is_complaint
+        if not state.wants_to_leave and (understood.wants_to_leave or leaving(state)):
+            update["wants_to_leave"] = True
 
-        # 2. a complaint: the specialist decides first
-        if update["is_complaint"]:
+        # 2. a complaint: the specialist decides first; a customer who wants to leave: the supervisor
+        if update.get("is_complaint") and state.complaint_result is None:
+            return update
+        if (state.wants_to_leave or update.get("wants_to_leave")) and state.retention is None:
             return update
 
     # 3. answer the customer, with the tools
@@ -80,6 +86,16 @@ def advisor_node(state: CallState) -> dict:
 
 
 # ---------------------------------------------------------------- 1. understand
+
+LEAVING = re.compile(r"(veux|voudrais|vais|souhaite|aimerais|compte|envisage de) (vous )?(résilier|quitter|partir)|"
+                     r"résilier mon|quitter callverse|changer d'opérateur|partir chez|(aller|voir) ailleurs|"
+                     r"code rio|chez la concurrence|un autre opérateur", re.I)
+
+
+def leaving(state: CallState) -> bool:
+    """A departure said in plain words (the small model sometimes misses it)."""
+    return bool(LEAVING.search(last_client_message(state)))
+
 
 def conversation_text(state: CallState) -> str:
     who = {"client": "Client", "advisor": "Conseiller"}
@@ -140,8 +156,21 @@ def system_prompt(state: CallState) -> str:
     return text
 
 
+def retention_text(state: CallState) -> str:
+    r = state.retention
+    if r is None:
+        return ""
+    if r.supervisor and r.offer:
+        return prompts.RETENTION_OFFER.format(offer=r.offer)
+    if r.supervisor:
+        return prompts.RETENTION_CALLBACK
+    return prompts.RETENTION_CONDITIONS
+
+
 def reminder(state: CallState) -> str:
     """The last instruction before the model answers, chosen by the situation."""
+    if state.retention is not None and state.complaint_result is None:
+        return prompts.RETENTION_REMINDER
     result = state.complaint_result
     if result is None:
         return prompts.REMINDER
@@ -259,7 +288,7 @@ def first_answer(model, state: CallState) -> tuple[str, list[ToolCall], list]:
     tools = {tool.name: tool for tool in build_tools(state.customer_id)}
     with_tools = model.bind_tools(list(tools.values()))
     context, calls = prefetch(state)
-    messages = [SystemMessage(system_prompt(state) + context + reminder(state)), *history(state)]
+    messages = [SystemMessage(system_prompt(state) + retention_text(state) + context + reminder(state)), *history(state)]
 
     for _ in range(MAX_TOOL_ROUNDS):
         reply = text_tool_call(with_tools.invoke(messages), tools)

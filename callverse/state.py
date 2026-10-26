@@ -83,6 +83,18 @@ class ComplaintResult(BaseModel):
     ticket_id: str | None = None
 
 
+# ---------------------------------------------------------------- supervisor (retention) -> advisor
+
+class RetentionResult(BaseModel):
+    """What the supervisor decides when a customer wants to leave (agent_guidelines.md, compensation_grid.md)."""
+
+    high_risk: bool                             # churn risk at or above the supervisor threshold
+    supervisor: bool                            # True = a supervisor handles the case (high risk)
+    offer: str | None = None                    # the loyalty offer, in French; None = no offer
+    offer_key: str | None = None                # words the advisor must say to present it, e.g. "3 mois offerts"
+    rules_cited: list[str] = Field(default_factory=list)
+
+
 # ---------------------------------------------------------------- reviewer output
 
 class CriterionScore(BaseModel):
@@ -119,10 +131,14 @@ class CallState(BaseModel):
     # advisor
     intent: str | None = None                   # what the advisor understood the customer wants
     is_complaint: bool = False                  # True sends the call to the complaint specialist
+    wants_to_leave: bool = False                # True sends the call to the supervisor (retention) once
     tools_used: Annotated[list[ToolCall], operator.add] = Field(default_factory=list)
 
     # complaint specialist
     complaint_result: ComplaintResult | None = None
+
+    # supervisor, when the customer wants to leave
+    retention: RetentionResult | None = None
 
     # client, at the end of the call
     outcome: Outcome | None = None

@@ -48,6 +48,9 @@ calls = Table(
     Column("compensation_cents", Integer),
     Column("escalated", Boolean),
     Column("ticket_id", String(20)),
+    Column("wants_to_leave", Boolean),                          # added with the retention route
+    Column("retention_offer", Text),                            # the supervisor's offer, if any
+    Column("retention_supervisor", Boolean),
     Column("overall", Float),
     Column("escalation_correct", Boolean),
     Column("recommendations", Text),                            # JSON list
@@ -66,8 +69,19 @@ call_scores = Table(
 
 
 def create_tables(engine=None) -> None:
-    """Creates the two tables if they are missing. Never deletes anything."""
-    results_metadata.create_all(engine or get_engine())
+    """Creates the two tables if they are missing, and adds columns added later (the saved calls stay).
+    Never deletes anything."""
+    from sqlalchemy import inspect, text
+
+    engine = engine or get_engine()
+    results_metadata.create_all(engine)
+    existing = {c["name"] for c in inspect(engine).get_columns("calls")}
+    missing = [c for c in calls.columns if c.name not in existing]
+    if missing:
+        with engine.begin() as conn:
+            for column in missing:
+                kind = column.type.compile(dialect=engine.dialect)
+                conn.execute(text(f"ALTER TABLE calls ADD COLUMN {column.name} {kind}"))
 
 
 def queue_of(call_reason: str) -> str:
@@ -92,6 +106,9 @@ def save_call(done: CallState, run_id: str, seconds: float, engine=None) -> None
         "complaint_category": r.category if r else None, "complaint_severity": r.severity if r else None,
         "compensation_cents": r.compensation_cents if r else None, "escalated": r.escalate if r else None,
         "ticket_id": r.ticket_id if r else None,
+        "wants_to_leave": done.wants_to_leave,
+        "retention_offer": done.retention.offer if done.retention else None,
+        "retention_supervisor": done.retention.supervisor if done.retention else None,
         "overall": q.overall if q else None, "escalation_correct": q.escalation_correct if q else None,
         "recommendations": json.dumps(q.recommendations if q else [], ensure_ascii=False),
         "messages": json.dumps([m.model_dump() for m in done.messages], ensure_ascii=False),
@@ -157,6 +174,7 @@ def summary(rows: list[dict]) -> dict:
     """The headline numbers of a set of calls."""
     complaints = [r for r in rows if r["is_complaint"]]
     checked = [r for r in complaints if r["escalation_correct"] is not None]
+    leaving = [r for r in rows if r.get("wants_to_leave")]
     return {
         "calls": len(rows),
         "resolved_rate": _share(rows, lambda r: r["outcome"] == "resolved"),
@@ -168,6 +186,9 @@ def summary(rows: list[dict]) -> dict:
         "escalation_rate": _share(complaints, lambda r: r["escalated"]),
         "escalation_accuracy": _share(checked, lambda r: r["escalation_correct"]),
         "avg_compensation_eur": _mean((r["compensation_cents"] or 0) / 100 for r in complaints),
+        "wanted_to_leave": len(leaving),
+        "kept_rate": _share(leaving, lambda r: r["outcome"] in ("resolved", "escalated")),
+        "offer_rate": _share(leaving, lambda r: bool(r.get("retention_offer"))),
         "avg_turns": _mean(r["turns"] for r in rows),
         "avg_seconds": _mean(r["seconds"] for r in rows),
     }

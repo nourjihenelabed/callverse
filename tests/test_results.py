@@ -115,3 +115,26 @@ def test_a_crashing_call_does_not_stop_the_batch(engine):
 
     counts = run_calls.run(3, "crash", seed=1, call=sometimes_crash, draw=draw)
     assert counts == {"done": 2, "skipped": 0, "failed": 1}
+
+
+def test_old_tables_get_the_new_columns_and_keep_their_calls(tmp_path, monkeypatch):
+    from sqlalchemy import create_engine, text
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    with engine.begin() as conn:            # a calls table made before the retention route
+        conn.execute(text("CREATE TABLE calls (call_id VARCHAR(60) PRIMARY KEY, run_id VARCHAR(40), "
+                          "finished_at DATETIME, recommendations TEXT, messages TEXT, tools_used TEXT)"))
+        conn.execute(text("INSERT INTO calls (call_id, run_id, finished_at) VALUES ('old-1', 'night-1', '2026-10-26')"))
+    results.create_tables(engine)
+    rows = results.load_calls(engine=engine)
+    assert [r["call_id"] for r in rows] == ["old-1"] and rows[0]["wants_to_leave"] is None
+
+
+def test_retention_numbers_in_the_summary():
+    base = {"satisfaction": 3, "overall": 4.0, "is_complaint": False, "escalated": None, "escalation_correct": None,
+            "compensation_cents": None, "turns": 2, "seconds": 60.0, "scores": {}, "recommendations": []}
+    rows = [{**base, "outcome": "resolved", "wants_to_leave": True, "retention_offer": "3 mois offerts"},
+            {**base, "outcome": "refused", "wants_to_leave": True, "retention_offer": None},
+            {**base, "outcome": "resolved", "wants_to_leave": False, "retention_offer": None}]
+    s = results.summary(rows)
+    assert s["wanted_to_leave"] == 2 and s["kept_rate"] == 0.5 and s["offer_rate"] == 0.5

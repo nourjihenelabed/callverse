@@ -129,6 +129,15 @@ def compliance_findings(state: CallState) -> list[Finding]:
             findings.append(Finding("compliance", 2, f"Le spécialiste a décidé une compensation de "
                                     f"{euros(result.compensation_cents)}, mais le client n'en a pas été informé.",
                                     "Annoncer au client la compensation décidée par le spécialiste."))
+    retention = state.retention
+    if retention is not None and retention.offer_key and retention.offer_key.lower() not in said.lower():
+        findings.append(Finding("compliance", 2, f"Le client voulait partir et un responsable a proposé « "
+                                f"{retention.offer} », mais l'offre n'a pas été présentée.",
+                                "Présenter au client l'offre de fidélisation décidée par le responsable."))
+    if retention is not None and retention.supervisor and not retention.offer and not ESCALATION_WORDS.search(said):
+        findings.append(Finding("compliance", 2, "Le client voulait partir et son dossier est transmis à un "
+                                "responsable, mais il n'en a pas été informé.",
+                                "Dire au client qu'un responsable le recontactera sous 48 heures ouvrées."))
     if result is not None and result.escalate and not ESCALATION_WORDS.search(said):
         findings.append(Finding("compliance", 3, "Le dossier est transmis à un superviseur, mais le client n'en "
                                 "a pas été informé.", "Dire au client qu'un responsable le recontactera sous "
