@@ -131,3 +131,40 @@ def wfm_summary(comparison: dict) -> list[dict]:
                                          f"/{len(comparison)}",
         })
     return lines
+
+
+# ---------------------------------------------------------------- the digital twin loop (phase 3)
+
+TWIN_PATH = COMPARISON_PATH.parent / "twin.json"
+
+
+def load_twin(path: Path = TWIN_PATH) -> dict | None:
+    """The results of python -m workforce.twin, or None if it has not been run on this computer."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+
+
+def twin_costs(report: dict) -> go.Figure:
+    names = list(report["results"])
+    values = [report["results"][n]["total_cost_eur"] for n in names]
+    colors = [GREY, RED, BLUE, GREEN][:len(names)]
+    fig = go.Figure(go.Bar(x=values, y=names, orientation="h", marker_color=colors,
+                           text=[f"{v:,} €" for v in values], textposition="outside"))
+    return _layout(fig, "Total cost per day on the same simulated days (€)", height=320,
+                   yaxis=dict(autorange="reversed"), xaxis=dict(range=[0, max(values) * 1.2]))
+
+
+def twin_rows(report: dict) -> list[dict]:
+    return [{"Situation": name, "Calls / day": r["calls"], "SLA (20 s)": f"{r['sla']:.1%}",
+             "Hang-ups": f"{r['abandonment_rate']:.1%}", "Staff cost (€)": r["staff_cost_eur"],
+             "Total cost (€)": r["total_cost_eur"]} for name, r in report["results"].items()]
+
+
+def twin_measured_rows(report: dict) -> list[dict]:
+    load = report["load"]
+    return [{"Queue": q, "AI calls": v["calls"], "Resolved first time": "–" if v["fcr"] is None else f"{v['fcr']:.0%}",
+             "Became complaints": f"{v['to_complaint']:.0%}", "Calls back (factor)": load["repeat_factor"][q],
+             "Share of calls after": f"{load['call_mix'][q]:.0%}"}
+            for q, v in report["measured"]["queues"].items()]

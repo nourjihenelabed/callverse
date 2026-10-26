@@ -89,7 +89,7 @@ def call_block(row: dict) -> str:
             + (f"<h4>Tips</h4><ul>{tips}</ul>" if tips else "") + "</details>")
 
 
-def build(rows: list[dict], comparison: dict | None, title: str) -> str:
+def build(rows: list[dict], comparison: dict | None, title: str, include_twin: bool = True) -> str:
     parts, first = [], True
 
     def add(fig):
@@ -125,6 +125,18 @@ def build(rows: list[dict], comparison: dict | None, title: str) -> str:
         add(charts.wfm_metric(comparison, "sla", "Calls answered within 20 s", percent=True))
         add(charts.wfm_metric(comparison, "abandonment_rate", "Customers who hang up", percent=True))
         parts.append("</div>")
+
+    twin = charts.load_twin() if include_twin else None
+    if twin:
+        rows_twin = charts.twin_rows(twin)
+        head = "".join(f"<th>{esc(k)}</th>" for k in rows_twin[0])
+        body = "".join("<tr>" + "".join(f"<td>{esc(v)}</td>" for v in line.values()) + "</tr>" for line in rows_twin)
+        m = twin["measured"]
+        parts.append(f"<h2>The loop: what the AI calls change for staffing</h2><p>Measured on {m['calls']} AI calls: "
+                     f"{m['fcr']:.0%} resolved at the first contact, so {twin['load']['volume_factor'] - 1:+.0%} calls "
+                     f"if {twin['callback_share']:.0%} of unresolved customers call back.</p>"
+                     f"<table><tr>{head}</tr>{body}</table>")
+        add(charts.twin_costs(twin))
 
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" '
             f'content="width=device-width, initial-scale=1"><title>{esc(title)}</title><style>{STYLE}</style>'

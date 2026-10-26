@@ -165,3 +165,32 @@ The charts in `workforce/models/explain/`: `timeline_<scenario>.html` (advisors 
 - The result depends on the reward prices (50 € / 8 €), a business choice the team should agree on.
 - The agent changes its requests often (it calls advisors in and sends them home after the 1-hour minimum more often than a real manager would; 4 to 7 queue switches per day). A small cost per staffing change in the reward would make it steadier.
 - The test scenarios are invented; real peaks could be modeled from incident logs.
+
+## Phase 3: the AI calls change the staffing (the digital twin loop)
+
+The workforce simulation is calibrated on the real Technion data: arrivals, call durations,
+patience. The AI calls add what that data cannot show: **how well calls are handled**.
+
+`python -m workforce.twin --run night-1` reads a batch of saved AI calls and measures, per queue:
+
+- **First-contact resolution (FCR)**: the share of calls that end resolved or handed to a supervisor.
+  An unresolved customer calls back; we assume half of them do (`CALLBACK_SHARE = 0.5`, a stated assumption).
+- **Calls that became complaints**: general or technical calls where the advisor detected a complaint;
+  they become work for the complaint-skilled advisors.
+
+From these, it builds a new center: more calls (the callbacks) and a different mix (more complaints).
+Call durations, patience and the team stay those of the real data. A queue with fewer than 5 AI calls
+keeps the neutral value. It then runs the same simulated days for four situations:
+
+| Situation | What it shows |
+|---|---|
+| As calibrated (Technion only) | the reference |
+| AI calls, plan ignores them | the Erlang C plan does not know about the callbacks: service drops |
+| AI calls, plan uses them | planning with the twin's numbers restores the service, at a staff cost |
+| Advisor at 80% FCR, plan uses it | what a better advisor is worth, in euros per day |
+
+First result, on the first 50 AI calls (55% resolved first time): about +23% calls; ignoring them drops
+the SLA from 89% to 82% and raises the total cost by about 2,500 € a day; planning for them brings the
+SLA back to 89%; an advisor at 80% FCR would save about 400 € a day.
+
+The results go to `workforce/models/twin.json` and the dashboard shows them (Workforce manager page).

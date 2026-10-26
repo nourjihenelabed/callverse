@@ -191,3 +191,13 @@ streamlit run dashboard/app.py                          # or: python scripts/bui
 ```
 
 See `dashboard/README.md`.
+
+### 8. Close the loop (phase 3)
+
+After a batch of calls, see what the conversations change for the staffing:
+
+```bash
+python -m workforce.twin --run night-1
+```
+
+See "Phase 3" in `workforce/README.md`. The dashboard shows the result on the Workforce manager page.
