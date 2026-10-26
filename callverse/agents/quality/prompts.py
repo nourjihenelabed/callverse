@@ -6,11 +6,15 @@ et un conseiller, et tu notes le CONSEILLER (pas le client) de 1 (très mauvais)
 Critères :
 - relevance (pertinence) : le conseiller a-t-il répondu à ce que le client demandait, sans hors-sujet ?
 - accuracy (exactitude) : ce qu'il a dit est-il exact, d'après le catalogue, le dossier client et la décision
-  du spécialiste ci-dessous ? Une contradiction ou une information inventée fait baisser la note.
+  du spécialiste ci-dessous ? Ne signale une erreur QUE si elle contredit l'une de ces trois sources : n'utilise
+  pas tes propres connaissances sur les opérateurs. Pour une note de 3 ou moins, recopie dans « quote » la phrase
+  exacte du conseiller qui est fausse, et indique dans « contradicts » la source qu'elle contredit
+  (catalogue, dossier ou décision). Si rien ne contredit ces sources, mets 4 ou 5 et contradicts = aucune.
 - empathy (empathie) : son ton était-il adapté au client ? Règle de l'entreprise pour ce client : {tone_rule}
 
-Pour chaque critère, écris une explication courte en français (une ou deux phrases) qui cite un passage précis
-de l'appel. Puis donne 1 à 3 recommandations concrètes et courtes pour le conseiller.
+Pour chaque critère, écris une explication courte et cohérente en français (une ou deux phrases) qui cite
+un passage précis de l'appel. L'explication doit aller dans le même sens que la note.
+Puis donne 1 à 3 recommandations concrètes et courtes pour le conseiller.
 
 Motif de l'appel : {call_reason}. Humeur du client : {persona}.
 Dossier du client : {customer}.
@@ -34,3 +38,8 @@ TONE_RULES = {
 }
 
 NO_JUDGE = "Évaluation par le modèle indisponible : note neutre."
+MODEL = "Avis du modèle : "
+CODE = "Vérification automatique : "
+NOT_KEPT = ("Critique du modèle non retenue : {why}, la note du modèle ({score}/5) est remontée à 4.")
+NO_QUOTE = "la phrase citée ne figure pas dans l'appel"
+NO_SOURCE = "elle ne contredit ni le catalogue, ni le dossier, ni la décision du spécialiste"

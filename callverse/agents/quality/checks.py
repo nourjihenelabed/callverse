@@ -123,6 +123,12 @@ def compliance_findings(state: CallState) -> list[Finding]:
         findings.append(Finding("compliance", 3, "Réclamation traitée sans le spécialiste des réclamations.",
                                 "Demander l'aide du spécialiste avant de proposer une solution."))
     result = state.complaint_result
+    if result is not None and not result.escalate and result.compensation_cents > 0:
+        announced = {cents(a) for a in AMOUNT.findall(said)}
+        if result.compensation_cents not in announced:
+            findings.append(Finding("compliance", 2, f"Le spécialiste a décidé une compensation de "
+                                    f"{euros(result.compensation_cents)}, mais le client n'en a pas été informé.",
+                                    "Annoncer au client la compensation décidée par le spécialiste."))
     if result is not None and result.escalate and not ESCALATION_WORDS.search(said):
         findings.append(Finding("compliance", 3, "Le dossier est transmis à un superviseur, mais le client n'en "
                                 "a pas été informé.", "Dire au client qu'un responsable le recontactera sous "

@@ -15,7 +15,9 @@ The AI model comes from get_model() and the account from get_facts(), so tests c
 """
 
 import logging
+import re
 import statistics
+from typing import Literal
 
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -34,9 +36,14 @@ class Grade(BaseModel):
     explanation: str
 
 
+class AccuracyGrade(Grade):
+    quote: str = Field(default="", description="la phrase fausse du conseiller, recopiée exactement")
+    contradicts: Literal["catalogue", "dossier", "décision", "aucune"] = "aucune"
+
+
 class Judgement(BaseModel):
     relevance: Grade
-    accuracy: Grade
+    accuracy: AccuracyGrade
     empathy: Grade
     recommendations: list[str] = Field(default_factory=list)
 
@@ -111,26 +118,24 @@ def review(state: CallState, facts: dict, judged: Judgement | None) -> QualityRe
     neutral = Grade(score=3, explanation=prompts.NO_JUDGE)
     findings = checks.amount_findings(state, facts) + checks.compliance_findings(state)
 
-    accuracy_model = judged.accuracy if judged else neutral
-    accuracy_code = checks.score_from(findings, "accuracy")
+    model_score, model_text = grounded_accuracy(judged.accuracy if judged else None, state)
     accuracy = CriterionScore(
-        score=min(accuracy_model.score, accuracy_code),
-        explanation=explain(accuracy_model.explanation, findings, "accuracy"))
+        score=min(model_score, checks.score_from(findings, "accuracy")),
+        explanation=explain(model_text, findings, "accuracy"))
 
     compliance_score = checks.score_from(findings, "compliance")
     compliance = CriterionScore(
         score=compliance_score,
-        explanation=explain("Toutes les règles vérifiées ont été respectées." if compliance_score == 5 else "",
-                            findings, "compliance"))
+        explanation=explain("", findings, "compliance", ok="Toutes les règles vérifiées ont été respectées."))
 
     resolution_score, resolution_text = checks.resolution_score(state)
     satisfaction = state.satisfaction or 1
 
     scores = {
-        "relevance": CriterionScore(**(judged.relevance if judged else neutral).model_dump()),
+        "relevance": labelled(judged.relevance if judged else neutral),
         "accuracy": accuracy,
         "compliance": compliance,
-        "empathy": CriterionScore(**(judged.empathy if judged else neutral).model_dump()),
+        "empathy": labelled(judged.empathy if judged else neutral),
         "resolution": CriterionScore(score=resolution_score, explanation=resolution_text),
         "satisfaction": CriterionScore(score=satisfaction, explanation=f"Note donnée par le client : {satisfaction}/5."),
     }
@@ -152,8 +157,43 @@ def review(state: CallState, facts: dict, judged: Judgement | None) -> QualityRe
     )
 
 
-def explain(model_text: str, findings: list, criterion: str) -> str:
-    """The model's explanation, then the code's findings with their evidence."""
+def labelled(grade: Grade) -> CriterionScore:
+    text = grade.explanation if grade.explanation == prompts.NO_JUDGE else prompts.MODEL + grade.explanation
+    return CriterionScore(score=grade.score, explanation=text)
+
+
+def grounded_accuracy(grade, state: CallState) -> tuple[int, str]:
+    """The judge may lower accuracy only with evidence: the advisor's exact sentence and the source it
+    contradicts. Without it, the criticism is not kept (the small judge once invented an error)."""
+    if grade is None:
+        return 3, prompts.NO_JUDGE
+    text = prompts.MODEL + grade.explanation
+    if grade.score >= 4:
+        return grade.score, text
+    if grade.contradicts == "aucune":
+        why = prompts.NO_SOURCE
+    elif not quoted(grade.quote, state):
+        why = prompts.NO_QUOTE
+    else:
+        return grade.score, text
+    return 4, f"{text} {prompts.NOT_KEPT.format(why=why, score=grade.score)}"
+
+
+def quoted(quote: str, state: CallState) -> bool:
+    """True when the quote really is (most of) something the advisor said."""
+    words = lambda text: re.findall(r"\w+", text.lower())  # noqa: E731
+    wanted = " ".join(words(quote))
+    if len(wanted) < 10:
+        return False
+    return any(wanted in " ".join(words(line)) for line in checks.advisor_lines(state))
+
+
+def explain(model_text: str, findings: list, criterion: str, ok: str = "") -> str:
+    """The model's view and the code's findings, each labelled, so the reader knows who said what."""
     parts = [model_text] if model_text else []
-    parts += [f.text for f in findings if f.criterion == criterion]
+    found = [f.text for f in findings if f.criterion == criterion]
+    if found:
+        parts.append(prompts.CODE + " ".join(found))
+    elif ok:
+        parts.append(prompts.CODE + ok)
     return " ".join(parts) or "Rien à signaler."

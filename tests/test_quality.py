@@ -149,3 +149,59 @@ def test_the_judge_sees_the_call_the_tone_rule_and_the_decision(monkeypatch):
 def test_recommendations_are_short_and_not_repeated():
     tips = report(finished("Combien ?", "29,99 € puis 19,99 € puis 9,49 €.", "Merci.", tools=[])).recommendations
     assert len(tips) <= agent.MAX_RECOMMENDATIONS and len(tips) == len(set(tips))
+
+
+# ---------------------------------------------------------------- the judge must give evidence
+
+MOBILE_CALL = finished(   # a real call: the advisor was right, the judge said it was wrong
+    "Et si je veux conserver mon forfait mobile, dois-je le modifier pour la box ADSL ?",
+    "Vous n'aurez pas besoin de modifier ou de renouveler votre forfait mobile de 100 Go pour que cela fonctionne "
+    "avec la box ADSL. Les forfaits mobiles ne sont pas liés aux box internet. Puis-je vous aider pour autre chose ?",
+    "Merci, au revoir.")
+
+
+def judge_says(accuracy: dict) -> FixedJudge:
+    grade = {"score": 4, "explanation": "Bien."}
+    return FixedJudge({"relevance": grade, "empathy": grade, "accuracy": accuracy})
+
+
+def test_a_criticism_without_a_source_is_not_kept():
+    invented = {"score": 3, "explanation": "En réalité, le forfait mobile est lié à la box internet.",
+                "quote": "Les forfaits mobiles ne sont pas liés aux box internet.", "contradicts": "aucune"}
+    r = report(MOBILE_CALL, judge=judge_says(invented))
+    assert r.scores["accuracy"].score == 4
+    assert "non retenue" in r.scores["accuracy"].explanation
+
+
+def test_a_criticism_quoting_words_the_advisor_never_said_is_not_kept():
+    fake_quote = {"score": 2, "explanation": "Prix faux.", "quote": "La Box ADSL coûte 19,99 € par mois.",
+                  "contradicts": "catalogue"}
+    r = report(MOBILE_CALL, judge=judge_says(fake_quote))
+    assert r.scores["accuracy"].score == 4 and "ne figure pas dans l'appel" in r.scores["accuracy"].explanation
+
+
+def test_a_criticism_with_evidence_is_kept():
+    real = {"score": 2, "explanation": "Contredit le catalogue.",
+            "quote": "Les forfaits mobiles ne sont pas liés aux box internet", "contradicts": "catalogue"}
+    assert report(MOBILE_CALL, judge=judge_says(real)).scores["accuracy"].score == 2
+
+
+def test_explanations_say_who_found_what():
+    # a real call: the advisor refunded 38,97 € instead of 37,97 €; the model saw nothing, the code did
+    call = finished("Je suis facturé 75,94 € au lieu de 37,97 €.",
+                    "Le spécialiste a décidé de vous rembourser le montant facturé à tort de 38,97 €.", "Merci.")
+    text = report(call).scores["accuracy"].explanation
+    assert text.startswith("Avis du modèle : ")
+    assert "Vérification automatique : Montant de 38,97 €" in text
+    assert report(GOOD_CALL).scores["compliance"].explanation.startswith("Vérification automatique : ")
+
+
+def test_a_decided_compensation_must_be_announced():
+    decided = ComplaintResult(category="billing", severity=2, actions=[], compensation_cents=500)
+    silent = finished("Ma facture est trop chère !", "Je peux vous rappeler.", "D'accord.", is_complaint=True,
+                      complaint_result=decided)
+    told = finished("Ma facture est trop chère !", "Vous recevrez une compensation de 5,00 €.", "Merci.",
+                    is_complaint=True, complaint_result=decided)
+    assert report(silent).scores["compliance"].score == 3
+    assert "5,00 €" in report(silent).scores["compliance"].explanation
+    assert report(told).scores["compliance"].score == 5
