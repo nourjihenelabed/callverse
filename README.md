@@ -202,3 +202,14 @@ python -m workforce.twin --run night-1
 ```
 
 See "Phase 3" in `workforce/README.md`. The dashboard shows the result on the Workforce manager page.
+
+### 9. Evaluation
+
+```bash
+python scripts/compare_runs.py night-1 night-2 --markdown evaluation/compare.md   # two batches, with significance tests
+python scripts/judge_agreement.py export --run night-2 --calls 10                # grade 10 calls yourself...
+python scripts/judge_agreement.py compare                                        # ...and compare with the AI reviewer
+python scripts/explain_churn.py                                                  # the churn model's test results
+```
+
+The tables are written in `evaluation/`, ready for the report.
