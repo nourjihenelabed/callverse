@@ -59,7 +59,7 @@ def billing_model(cents=500, severity=2, rules_used=(1,)):
     return FakeModel(
         classification=steps._Classification(category="billing", severity=severity),
         draft=steps._Draft(actions=["rembourser l'option facturée par erreur"],
-                           compensation_cents=cents, rules_used=list(rules_used)),
+                           compensation_euros=cents / 100, rules_used=list(rules_used)),
     )
 
 
@@ -79,6 +79,36 @@ def test_simple_billing_complaint_is_handled_without_a_supervisor():
 
 
 # ---------------------------------------------------------------- money limits
+
+def test_the_model_gives_euros_and_the_code_converts_to_cents():
+    model = billing_model()
+    model.answers[steps._Draft] = steps._Draft(actions=[], compensation_euros=5.85)   # 5-day fiber outage
+    result = steps.handle_complaint(call(), tools(model))
+
+    assert result.compensation_cents == 585                     # not 58, not 5
+
+
+def test_the_offer_action_is_kept_even_after_a_long_draft():
+    model = billing_model()
+    model.answers[steps._Draft] = steps._Draft(actions=[f"action {n}" for n in range(8)], compensation_euros=4)
+    result = steps.handle_complaint(call(), tools(model))                  # gravité 2: auto cap 5 €
+
+    assert "proposer au client un avoir de 4,00 € sur sa prochaine facture" in result.actions
+
+
+def test_no_compensation_means_no_offer_action():
+    result = steps.handle_complaint(call(), tools(billing_model(cents=0)))
+
+    assert not any(a.startswith("proposer au client un avoir") for a in result.actions)
+
+
+def test_an_offer_above_the_automatic_cap_waits_for_the_supervisor():
+    result = steps.handle_complaint(call(), tools(billing_model(cents=1200)))
+
+    assert "proposer au client un avoir de 12,00 € sur sa prochaine facture, " \
+           "sous réserve de l'accord du responsable" in result.actions
+    assert result.actions[-1] == rules.ESCALATION_ACTION
+
 
 def test_compensation_above_the_automatic_cap_goes_to_a_supervisor():
     result = steps.handle_complaint(call(), tools(billing_model(cents=1200)))   # gravité 2: auto 5 €, max 15 €

@@ -45,6 +45,12 @@ REQUIRED_ACTIONS: dict[ComplaintCategory, str] = {
     "delivery": "vérifier le suivi du colis ou du rendez-vous technicien et proposer un nouveau rendez-vous sous 72 heures",
 }
 
+def compensation_action(cents: int, over_cap: bool) -> str:
+    """The step that tells the advisor to offer the compensation (compensation_grid.md, "Principes")."""
+    action = f"proposer au client un avoir de {cents / 100:.2f} € sur sa prochaine facture".replace(".", ",")
+    return action + (", sous réserve de l'accord du responsable" if over_cap else "")
+
+
 ESCALATION_ACTION = "informer le client que son dossier est transmis à un responsable, qui le recontacte sous 48 heures ouvrées"
 
 

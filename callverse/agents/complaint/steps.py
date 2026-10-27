@@ -93,7 +93,7 @@ class _Classification(BaseModel):
 
 class _Draft(BaseModel):
     actions: list[str]
-    compensation_cents: int = Field(default=0, ge=0)
+    compensation_euros: float = Field(default=0, ge=0)     # the model miscounts cents, code converts
     rules_used: list[int] = Field(default_factory=list)
 
 
@@ -162,7 +162,7 @@ def draft_fix(state: CallState, case: Case, tools: Tools) -> None:
             )
             answer = tools.llm.with_structured_output(_Draft).invoke(prompt)
             case.actions = [a.strip() for a in answer.actions if a.strip()][:MAX_DRAFT_ACTIONS]
-            case.compensation_cents = answer.compensation_cents
+            case.compensation_cents = round(answer.compensation_euros * 100)
             case.rules_cited = [_label(case.hits[n - 1]) for n in answer.rules_used if 1 <= n <= len(case.hits)]
             return
         except Exception as error:
@@ -181,8 +181,11 @@ def check_fix(state: CallState, case: Case, tools: Tools) -> None:
     if required not in case.actions:
         case.actions.insert(0, required)
         case.rules_cited.append(RULE_REQUIRED)
-    if case.compensation_cents > 0 and not any(r.startswith("compensation_grid.md") for r in case.rules_cited):
-        case.rules_cited.append(RULE_CAPS)
+    if case.compensation_cents > 0:
+        # always said, even when the model's own "offer a credit" was cut by MAX_DRAFT_ACTIONS
+        case.actions.append(rules.compensation_action(case.compensation_cents, case.over_cap))
+        if not any(r.startswith("compensation_grid.md") for r in case.rules_cited):
+            case.rules_cited.append(RULE_CAPS)
 
 
 def decide(state: CallState, case: Case, tools: Tools) -> None:
