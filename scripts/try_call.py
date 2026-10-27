@@ -51,6 +51,10 @@ def show(done: CallState, seconds: float) -> None:
         r = done.complaint_result
         print(f"  [complaint specialist: {r.category}, severity {r.severity}, "
               f"{r.compensation_cents / 100:.2f} EUR, escalate={r.escalate}, ticket {r.ticket_id}]")
+    if done.retention:
+        r = done.retention
+        what = r.offer or ("supervisor calls back" if r.supervisor else "conditions explained, no offer")
+        print(f"  [supervisor: customer wants to leave, high risk={r.high_risk}: {what}]")
     tools = ", ".join(sorted({t.name for t in done.tools_used})) or "none"
     print(f"  -> outcome: {done.outcome}   satisfaction: {done.satisfaction}/5   turns: {done.turn}   "
           f"tools: {tools}   ({seconds:.0f} s)")

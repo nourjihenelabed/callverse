@@ -81,6 +81,9 @@ if page == "Calls":
         cols[3].metric("Quality (reviewer)", grade(s["avg_quality"]))
         cols[4].metric("Correct escalation choices", percent(s["escalation_accuracy"]),
                        help="Complaints only: the reviewer rechecks the 4 supervisor rules.")
+        if s["wanted_to_leave"]:
+            st.caption(f"Customers who wanted to leave: {s['wanted_to_leave']}, given a supervisor's offer: "
+                       f"{percent(s['offer_rate'])}, kept (resolved or with a supervisor): {percent(s['kept_rate'])}.")
         st.caption(f"Complaints: {percent(s['complaint_rate'])} of calls, escalated: {percent(s['escalation_rate'])}, "
                    f"average compensation {s['avg_compensation_eur'] or 0:.2f} €. Average {s['avg_turns']} customer "
                    f"messages and {s['avg_seconds']} s per call.")
@@ -127,6 +130,14 @@ elif page == "One call":
             st.caption(f"Customer {row['customer_id']} · outcome **{row['outcome']}** · "
                        f"satisfaction {row['satisfaction']}/5 · {row['turns']} customer messages · "
                        f"tools: {', '.join(sorted({t['name'] for t in row['tools_used']})) or 'none'}")
+            if row.get("wants_to_leave"):
+                st.subheader("Supervisor (customer wanted to leave)")
+                if row.get("retention_offer"):
+                    st.write(f"Loyalty offer: **{row['retention_offer']}**.")
+                elif row.get("retention_supervisor"):
+                    st.write("High risk, no offer in the grid: a supervisor calls the customer back.")
+                else:
+                    st.write("Not at high risk: the advisor explains the cancellation conditions, no offer.")
             if row["is_complaint"]:
                 st.subheader("Complaint specialist's decision")
                 comp = (row["compensation_cents"] or 0) / 100

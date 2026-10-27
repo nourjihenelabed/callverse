@@ -11,6 +11,7 @@ from callverse.agents.advisor import agent as advisor
 from callverse.agents.client import agent as client
 from callverse.agents.complaint import steps
 from callverse.agents.quality import agent as quality
+from callverse.agents.retention import agent as retention
 from fakes import FAKE_FACTS, FAKE_REVIEW_FACTS, FixedJudge, KeywordModel, PoliteCustomer
 
 
@@ -48,3 +49,9 @@ def reviewer_offline(monkeypatch):
     """A fake reviewer model and a made-up account (test_quality.py tests the real checks)."""
     monkeypatch.setattr(quality, "get_model", lambda: FixedJudge())
     monkeypatch.setattr(quality, "get_facts", lambda customer_id: dict(FAKE_REVIEW_FACTS))
+
+
+@pytest.fixture(autouse=True)
+def supervisor_offline(monkeypatch):
+    """The supervisor reads a made-up account (not at high risk) instead of the database."""
+    monkeypatch.setattr(retention, "get_facts", lambda customer_id: {"churn_risk": 0.4, "codes": {"box_fibre"}})

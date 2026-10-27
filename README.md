@@ -23,6 +23,7 @@ All the workers read from the same shared folder: the company rules, common ques
 1. A pretend customer calls and waits in line.
 2. The advisor answers.
 3. If it is a complaint, the advisor asks the complaint specialist for help, then gives the customer the fix.
+   If the customer wants to leave, the advisor asks a supervisor, who may make a loyalty offer (see `callverse/agents/retention/README.md`).
 4. When the call ends, the reviewer grades it.
 5. The floor manager looks at how busy the call center is and moves workers if needed.
 6. A scoreboard shows the results: waiting time, problems solved, and call grades.

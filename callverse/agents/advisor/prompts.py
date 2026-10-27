@@ -88,6 +88,8 @@ Décide ce que le client veut dans son DERNIER message.
   en panne, SIM à activer) : c'est une demande d'aide, pas une réclamation. Elle devient une réclamation
   seulement s'il se plaint de la façon dont CallVerse l'a traité, si le problème dure depuis plusieurs jours,
   ou s'il demande un remboursement ou un geste.
+- wants_to_leave : true si le client veut résilier, quitter CallVerse ou partir chez un autre opérateur
+  (même s'il ne fait que l'envisager). false sinon.
 
 Conversation :
 {conversation}"""
@@ -107,6 +109,27 @@ C'est le responsable qui décidera : les actions ci-dessus sont seulement des pi
 Ne les promets pas. La raison du transfert est interne : ne la donne jamais au client."""
 
 ESCALATION_SENTENCE = "Votre dossier est transmis à un responsable, qui vous recontactera sous 48 heures ouvrées."
+RETENTION_OFFER = """
+
+Le client veut partir. Un responsable a étudié son dossier et lui propose : {offer}.
+Présente cette offre au client comme venant d'un responsable, avec ces mots. Si le client veut quand même
+partir, explique-lui les conditions de résiliation de son contrat (cherche-les avec search_policies si besoin)."""
+
+RETENTION_CALLBACK = """
+
+Le client veut partir. Son dossier est transmis à un responsable, qui le recontactera sous 48 heures ouvrées
+pour étudier sa situation. Dis-le au client, et explique-lui les conditions de résiliation de son contrat."""
+
+RETENTION_CONDITIONS = """
+
+Le client veut partir. Écoute la raison de son départ, puis explique-lui clairement les conditions de
+résiliation de son contrat (délai, frais), d'après les règles. Ne propose aucune offre commerciale."""
+
+RETENTION_REMINDER = """
+
+RAPPEL avant de répondre : 4 phrases au maximum, vouvoiement. Reconnais d'abord la raison du départ.
+Ne parle jamais d'un « risque de départ » ni d'un score. N'invente aucune autre offre que celle indiquée."""
+
 CLOSING = "Puis-je vous aider pour autre chose ?"
 DONT_REPEAT = """Tu viens de répéter presque mot pour mot une réponse déjà donnée dans cet appel. Ne la répète pas.
 Réponds autrement et brièvement à la dernière phrase du client. Si tu n'as pas d'autre information, dis-le
