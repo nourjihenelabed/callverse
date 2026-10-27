@@ -1,6 +1,6 @@
 """Checks that one full call still works from start to finish.
 
-These tests use no AI model and no database, so they run in about a second.
+These tests use no AI model and no database (see conftest.py), so they run in about a second.
 Run them before every pull request:  pytest
 """
 

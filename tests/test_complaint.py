@@ -3,6 +3,8 @@
 No Ollama and no database: a fake model gives fixed answers and the history is made up.
 """
 
+import pytest
+
 from callverse.agents.complaint import rules, steps
 from callverse.graph import run_call
 from callverse.state import CallState, ComplaintResult, Message
@@ -82,16 +84,16 @@ def test_simple_billing_complaint_is_handled_without_a_supervisor():
 
 def test_the_model_gives_euros_and_the_code_converts_to_cents():
     model = billing_model()
-    model.answers[steps._Draft] = steps._Draft(actions=[], compensation_euros=5.85)   # 5-day fiber outage
-    result = steps.handle_complaint(call(), tools(model))
+    model.answers[steps._Draft] = steps._Draft(actions=[], compensation_euros=4.99)
+    result = steps.handle_complaint(call(), tools(model))                  # gravité 2: auto cap 5 €
 
-    assert result.compensation_cents == 585                     # not 58, not 5
+    assert result.compensation_cents == 500       # 499 cents, then rounded to whole euros by the grid
 
 
 def test_the_offer_action_is_kept_even_after_a_long_draft():
     model = billing_model()
     model.answers[steps._Draft] = steps._Draft(actions=[f"action {n}" for n in range(8)], compensation_euros=4)
-    result = steps.handle_complaint(call(), tools(model))                  # gravité 2: auto cap 5 €
+    result = steps.handle_complaint(call(), tools(model))
 
     assert "proposer au client un avoir de 4,00 € sur sa prochaine facture" in result.actions
 
@@ -108,7 +110,6 @@ def test_an_offer_above_the_automatic_cap_waits_for_the_supervisor():
     assert "proposer au client un avoir de 12,00 € sur sa prochaine facture, " \
            "sous réserve de l'accord du responsable" in result.actions
     assert result.actions[-1] == rules.ESCALATION_ACTION
-
 
 def test_compensation_above_the_automatic_cap_goes_to_a_supervisor():
     result = steps.handle_complaint(call(), tools(billing_model(cents=1200)))   # gravité 2: auto 5 €, max 15 €
@@ -258,3 +259,74 @@ def test_graph_skips_the_follow_up_on_an_everyday_call(monkeypatch):
     run_call(CallState(call_id="g", customer_id="7590-VHVEG", persona="calm", call_reason="check_invoice"))
 
     assert t.updates == []
+
+
+def test_required_step_is_not_listed_twice_even_reworded():
+    case = steps.Case()
+    case.category = "billing"
+    case.actions = ["Vérifier la facture concernée et les produits du client avant toute proposition.",
+                    "Rembourser le montant facturé à tort en totalité.", "rembourser le montant facturé à tort"]
+    steps.check_fix(None, case, None)
+    assert case.actions == [rules.REQUIRED_ACTIONS["billing"], "Rembourser le montant facturé à tort en totalité."]
+    assert steps.RULE_REQUIRED not in case.rules_cited      # the model had already proposed it
+
+
+def test_different_steps_are_kept():
+    assert not rules.same_step("Rembourser le montant", "Proposer un virement")
+    assert rules.same_step("vérifier la facture", "Vérifier la facture concernée.")
+
+
+@pytest.mark.parametrize("category, cents, expected", [
+    ("billing", 50, 0),            # 0,50 €: cents and euros mixed up
+    ("billing", 480, 500),         # whole euros
+    ("billing", 500, 500),
+    ("technical", 585, 585),       # 5 days of fibre outage: 5 x 1,17 €
+    ("technical", 83, 0),
+])
+def test_compensation_is_an_amount_the_grid_can_give(category, cents, expected):
+    assert rules.tidy_compensation(category, cents) == expected
+
+
+@pytest.mark.parametrize("text, days", [("coupé depuis 4 jours", 4), ("depuis une semaine", 7),
+                                        ("depuis trois jours", 3), ("depuis ce matin", 0), ("sans internet", None)])
+def test_outage_days_are_read_from_the_customer_words(text, days):
+    assert rules.outage_days(text) == days
+
+
+def test_outage_credit_is_computed_from_the_box_not_guessed():
+    case = steps.Case(category="technical", severity=4, compensation_cents=1170)   # the model's guess
+    case.history = steps.History(box_code="box_adsl")
+    steps.check_fix(call("Mon internet est coupé depuis 4 jours !", "complaint_technical"), case, None)
+    assert case.compensation_cents == 4 * 83                                      # 3,32 € as in the grid
+
+
+def test_no_outage_credit_under_48_hours_or_without_a_box():
+    assert rules.outage_credit(2, "box_fibre") is None
+    assert rules.outage_credit(5, None) is None
+    assert rules.outage_credit(5, "box_fibre") == 585
+
+
+@pytest.mark.parametrize("text, floor", [("ma facture est de 75,94 € au lieu de 37,97 €", 2),
+                                         ("120 € au lieu de 40 €", 3), ("une option facturée sans accord", 1)])
+def test_money_in_the_customer_words_sets_a_minimum_severity(text, floor):
+    assert rules.money_severity(text) == floor
+
+
+def test_a_doubled_bill_is_never_severity_1():
+    t = tools(billing_model(cents=0, severity=1))          # the model said "no money lost"
+    result = steps.handle_complaint(call("Ma facture est de 75,94 € au lieu de 37,97 €."), t)
+    assert result.severity == 2
+
+
+@pytest.mark.parametrize("text, days", [("ne marche plus depuis ce matin", 0), ("coupé depuis hier", 1),
+                                        ("depuis avant-hier", 2), ("depuis 3 heures", 0)])
+def test_same_day_outages_are_read(text, days):
+    assert rules.outage_days(text) == days
+
+
+def test_no_outage_credit_under_48_hours_even_if_the_model_guesses_one():
+    # a real call: "mon internet ne marche plus depuis ce matin" got 11,70 € from the model
+    case = steps.Case(category="technical", severity=2, compensation_cents=1170)
+    case.history = steps.History(box_code="box_fibre")
+    steps.check_fix(call("Bonjour, mon internet ne marche plus depuis ce matin.", "complaint_technical"), case, None)
+    assert case.compensation_cents == 0

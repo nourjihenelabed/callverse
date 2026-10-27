@@ -41,8 +41,9 @@ Règles de l'entreprise (utilise seulement celles-ci) :
 {rules}
 
 Réponds avec :
-- actions : 1 à 4 actions concrètes, courtes, en français, pour le conseiller.
-- compensation_euros : le geste commercial en euros (5,85 € = 5.85), selon la grille.
+- actions : 1 à 4 actions concrètes, courtes, en français, pour le conseiller. Chaque action une seule fois.
+- compensation_euros : le geste commercial en euros, selon la grille.
+  Exemples : 5 € = 5, 10 € = 10, 5,85 € = 5.85. Jamais un montant inventé.
   Un remboursement d'un montant facturé à tort n'est PAS une compensation : mets-le dans les actions.
   Mets 0 si la grille ne prévoit rien.
 - rules_used : les numéros [n] des règles qui justifient ta décision.

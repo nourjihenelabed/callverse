@@ -11,37 +11,37 @@
     "open_hour": 8,
     "close_hour": 20,
     "calls_per_hour": [
-      48.33471,
-      118.603288,
-      152.716421,
-      120.459087,
-      90.253391,
-      92.808612,
-      98.273427,
-      114.341478,
-      72.683915,
-      56.084304,
-      46.982494,
-      38.458874
+      42.034393,
+      110.305465,
+      147.968087,
+      113.672091,
+      87.483853,
+      93.956738,
+      103.11808,
+      123.178573,
+      79.993714,
+      60.750657,
+      50.620502,
+      36.917847
     ],
     "raw_calls_per_hour": [
-      20.167315,
-      49.486381,
-      63.719844,
-      50.2607,
-      37.657588,
-      38.723735,
-      41.003891,
-      47.708171,
-      30.326848,
-      23.400778,
-      19.603113,
-      16.046693
+      27.011673,
+      70.883268,
+      95.085603,
+      73.046693,
+      56.217899,
+      60.377432,
+      66.264591,
+      79.155642,
+      51.404669,
+      39.038911,
+      32.529183,
+      23.723735
     ],
     "rescaled_to_daily_calls": 1050.0,
-    "weekday_count": 257,
-    "daily_volume_cv": 0.813195,
-    "source": "Weekday queue entries grouped by hour from the 1999 monthly files."
+    "working_day_count": 257,
+    "daily_volume_cv": 0.442984,
+    "source": "Queue entries on the bank's working days (Sunday-Thursday), grouped by hour, 1999 monthly files."
   },
   "service": {
     "general": {
@@ -65,12 +65,12 @@
   },
   "patience": {
     "minutes": {
-      "general": 7.018453,
-      "technical": 7.018453,
-      "complaint": 7.018453
+      "general": 7.9961,
+      "technical": 7.9961,
+      "complaint": 7.9961
     },
     "by_hour": {
-      "0": 5.175683,
+      "0": 5.168306,
       "1": 5.58,
       "2": 1.405556,
       "3": null,
@@ -102,9 +102,30 @@
     "source": "Retained from Phase 1 Brown et al. published forecast variability."
   },
   "roster": {
-    "general_only": 6,
-    "general_technical": 9,
-    "general_complaint": 6,
-    "source": "Retained from Phase 1 roster sizing rule."
+    "general_only": 8,
+    "general_technical": 10,
+    "general_complaint": 7,
+    "erlang_peak": {
+      "total": 20,
+      "technical": 8,
+      "complaint": 5
+    },
+    "source": "Sized so the Erlang C plan uses at most 80% of the roster at its busiest hour, per skill (calls_per_hour, call_mix and service times of this file)."
+  },
+  "rules": {
+    "reactive": {
+      "per_waiting": 1,
+      "max_extra": 5,
+      "use_priority": false
+    },
+    "margin": {
+      "margin": {
+        "general": 4,
+        "technical": 1,
+        "complaint": 0
+      },
+      "priority": true
+    },
+    "source": "Cheapest settings on 40 random training days (seed 123), written by python -m workforce.tune_rules."
   }
 }

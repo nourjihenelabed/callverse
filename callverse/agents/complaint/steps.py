@@ -56,6 +56,7 @@ class History:
     repeat_count: int = 0                       # earlier complaints of the same category, last 12 months
     churn_risk: float | None = None
     reopen_ticket_id: str | None = None         # a ticket resolved less than 30 days ago, same category
+    box_code: str | None = None                 # "box_fibre" or "box_adsl", for the outage credit
 
 
 @dataclass
@@ -128,6 +129,9 @@ def classify(state: CallState, case: Case, tools: Tools) -> None:
 
     # never trust the model alone on a legal threat
     case.legal_threat = case.legal_threat or rules.mentions_legal_threat(_client_text(state))
+    # nor on a money loss: a bill that doubled is not "no money lost" (severity 1)
+    if case.category in ("billing", "termination"):
+        case.severity = max(case.severity, rules.money_severity(_client_text(state)))
 
 
 def check_history(state: CallState, case: Case, tools: Tools) -> None:
@@ -175,12 +179,25 @@ def draft_fix(state: CallState, case: Case, tools: Tools) -> None:
 
 def check_fix(state: CallState, case: Case, tools: Tools) -> None:
     """5. Keep the compensation inside the grid and add any required step that is missing."""
-    case.compensation_cents, case.over_cap = rules.check_compensation(case.severity, case.compensation_cents)
+    cents = rules.tidy_compensation(case.category, case.compensation_cents)
+    if case.category == "technical":         # the outage credit is computed, never guessed by the model
+        days = rules.outage_days(_client_text(state))
+        credit = rules.outage_credit(days, case.history.box_code)
+        if credit is not None:
+            # an outage of more than 48 hours is severity 3 or more (complaint_procedures.md)
+            cents = min(credit, rules.AUTO_CAP_CENTS[max(case.severity, 3)])
+        elif days is not None and days < rules.OUTAGE_MIN_DAYS:
+            cents = 0                       # under 48 hours: no outage credit (the model once gave 11,70 €)
+    case.compensation_cents, case.over_cap = rules.check_compensation(case.severity, cents)
 
     required = rules.REQUIRED_ACTIONS[case.category]
-    if required not in case.actions:
-        case.actions.insert(0, required)
+    if not any(rules.same_step(a, required) for a in case.actions):
         case.rules_cited.append(RULE_REQUIRED)
+    actions = [required]
+    for action in case.actions:              # no step twice, even written a bit differently
+        if not any(rules.same_step(action, kept) for kept in actions):
+            actions.append(action)
+    case.actions = actions
     if case.compensation_cents > 0:
         # always said, even when the model's own "offer a credit" was cut by MAX_DRAFT_ACTIONS
         case.actions.append(rules.compensation_action(case.compensation_cents, case.over_cap))
@@ -264,7 +281,7 @@ def make_tools() -> Tools:
 def db_history(customer_id: str, category: ComplaintCategory) -> History:
     from sqlalchemy import and_, func, select
 
-    from callverse.db import complaints, customers, get_engine, tickets
+    from callverse.db import complaints, customer_products, customers, get_engine, tickets
 
     today = rules.HISTORY_REFERENCE_DATE
     since = today - timedelta(days=rules.HISTORY_DAYS)
@@ -284,8 +301,12 @@ def db_history(customer_id: str, category: ComplaintCategory) -> History:
                    complaints.c.closed_at >= today - timedelta(days=REOPEN_DAYS))
             .order_by(complaints.c.closed_at.desc())
         ).scalar()
+        box = conn.execute(
+            select(customer_products.c.product_code)
+            .where(customer_products.c.customer_id == customer_id, customer_products.c.product_code.like("box_%"))
+        ).scalar()
 
-    return History(repeat_count=repeat_count or 0, churn_risk=churn_risk, reopen_ticket_id=reopen)
+    return History(repeat_count=repeat_count or 0, churn_risk=churn_risk, reopen_ticket_id=reopen, box_code=box)
 
 
 def db_open_ticket(state: CallState, result: ComplaintResult, history: History) -> str:

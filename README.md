@@ -23,6 +23,7 @@ All the workers read from the same shared folder: the company rules, common ques
 1. A pretend customer calls and waits in line.
 2. The advisor answers.
 3. If it is a complaint, the advisor asks the complaint specialist for help, then gives the customer the fix.
+   If the customer wants to leave, the advisor asks a supervisor, who may make a loyalty offer (see `callverse/agents/retention/README.md`).
 4. When the call ends, the reviewer grades it.
 5. The floor manager looks at how busy the call center is and moves workers if needed.
 6. A scoreboard shows the results: waiting time, problems solved, and call grades.
@@ -156,3 +157,59 @@ Never put your `.env` file on GitHub. It is already blocked, so `git add .` will
 1. Install Chroma: `pip install -e ".[dev,rag]"`. If Windows blocks it, set `rag: store: "local"` in your own copy of `settings.yaml` (don't push that change) and skip this step.
 2. With Ollama running, build the index: `python scripts/build_index.py "Combien coûte la Box Fibre ?"`
 3. Build it again whenever a file in `data/policies/` changes.
+
+### 5. Try the advisor
+
+With Ollama running, the database filled and the rules indexed:
+
+```bash
+python scripts/try_advisor.py                  # 4 prepared questions
+python scripts/try_advisor.py --chat           # type your own messages
+```
+
+It shows what the advisor understood, the tools it used and its answer. See `callverse/agents/advisor/README.md`.
+
+### 6. Run whole pretend calls
+
+The AI customer talks to the AI advisor from start to finish:
+
+```bash
+python scripts/try_call.py                                         # 3 random calls
+python scripts/try_call.py --reason complaint_billing --persona demanding
+```
+
+After each call the reviewer's grades are printed, with the reason for each (`--short` hides the reasons).
+See `callverse/agents/client/README.md` and `callverse/agents/quality/README.md`. Complaint calls open real tickets: run `python scripts/seed_data.py` again to clean them.
+
+### 7. The scoreboard
+
+Run a batch of calls (saved in the database), then look at the results:
+
+```bash
+python scripts/run_calls.py --calls 50 --run night-1    # 1 to 2 hours; run it again to continue
+pip install -e ".[dashboard]"
+streamlit run dashboard/app.py                          # or: python scripts/build_report.py (one HTML page)
+```
+
+See `dashboard/README.md`.
+
+### 8. Close the loop (phase 3)
+
+After a batch of calls, see what the conversations change for the staffing:
+
+```bash
+python -m workforce.twin --run night-1
+```
+
+See "Phase 3" in `workforce/README.md`. The dashboard shows the result on the Workforce manager page.
+
+### 9. Evaluation
+
+```bash
+python scripts/compare_runs.py night-1 night-2 --markdown evaluation/compare.md   # two batches, with significance tests
+python scripts/judge_agreement.py export --run night-2 --calls 10                # grade 10 calls yourself...
+python scripts/judge_agreement.py compare                                        # ...and compare with the AI reviewer
+python scripts/explain_churn.py                                                  # the churn model's test results
+```
+
+The tables are written in `evaluation/`, ready for the report.

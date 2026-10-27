@@ -33,7 +33,10 @@ def test_phase_one_calibration_is_loaded():
     assert config.handle_spread > 0
     assert config.forecast_error == pytest.approx(0.2)
     assert len(config.calls_per_hour) == 12
-    assert sum(count for count, _ in config.roster) == 21
+    # the roster leaves room above the Erlang C plan's busiest hour (sized by calibrate_workforce.py)
+    from workforce.manager import FixedRulePolicy
+    peak = max(sum(hour.values()) for hour in FixedRulePolicy(config).plan)
+    assert peak <= 0.8 * sum(count for count, _ in config.roster)
 
 
 def test_every_call_is_counted_once():
@@ -76,7 +79,8 @@ def test_baseline_meets_its_service_target():
 def test_skills_limit_who_can_work_where():
     class AskTooMany(Policy):
         def decide(self, snapshot):
-            assert snapshot.staffed["complaint"] <= 6   # only 6 advisors have the complaint skill
+            able = sum(n for n, skills in CenterConfig().roster if "complaint" in skills)
+            assert snapshot.staffed["complaint"] <= able   # only advisors with the complaint skill
             return {"complaint": 50}
 
     CallCenter(AskTooMany(), seed=1).run()
@@ -197,4 +201,4 @@ def test_margin_rule_adds_its_margin_and_priority():
 
     CallCenter(Spy(), seed=1).run()
     for wanted, planned in seen:
-        assert wanted["general"] == planned["general"] + 4 and wanted["priority"] is True
+        assert all(wanted[q] == planned[q] + Spy().margin[q] for q in QUEUES)

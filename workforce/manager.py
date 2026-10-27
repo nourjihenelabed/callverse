@@ -7,13 +7,33 @@ This file has the policies that decide how many advisors work on each queue:
 - MarginRulePolicy: the same plan, plus a fixed safety margin of advisors, priority on.
 - ReactiveRulePolicy: the same plan, plus extra advisors when a queue builds up, and
   multi-skilled advisors serve specialist queues first when customers wait there.
-- (next step) the RL agent, trained with Stable-Baselines3 on the same simulation.
-  Both are compared on the same days with workforce.simulation.simulate_days().
+- The RL agent lives in env.py. All policies are compared in compare.py.
+The two rules' settings are tuned for the calibrated center by workforce.tune_rules.
 """
 
+import json
 import math
+from pathlib import Path
 
 from workforce.simulation import QUEUES, CenterConfig, Policy, Snapshot
+
+CALIBRATION_PATH = Path(__file__).with_name("calibration.json")
+
+# Used when calibration.json has no "rules" section (python -m workforce.tune_rules writes one).
+DEFAULT_RULES = {
+    "reactive": {"per_waiting": 1, "max_extra": 5, "use_priority": False},
+    "margin": {"margin": {"general": 4, "technical": 0, "complaint": 0}, "priority": True},
+}
+
+
+def tuned_rules() -> dict:
+    """The rule settings tuned for the calibrated center, or the defaults."""
+    try:
+        rules = json.loads(CALIBRATION_PATH.read_text(encoding="utf-8")).get("rules", {})
+    except FileNotFoundError:
+        rules = {}
+    return {name: {**DEFAULT_RULES[name], **{k: v for k, v in rules.get(name, {}).items() if k in DEFAULT_RULES[name]}}
+            for name in DEFAULT_RULES}
 
 
 # ---------------------------------------------------------------- Erlang C
@@ -74,12 +94,14 @@ class ReactiveRulePolicy(FixedRulePolicy):
     advisors when customers pile up in a queue. A fairer opponent for the RL agent,
     because it also reacts to what happens during the day."""
 
-    # tuned on training days (not the test days): 1 extra advisor per waiting customer, at most 5;
-    # turning priority on made this rule slightly worse, so it is off by default
-    def __init__(self, config: CenterConfig | None = None, per_waiting: int = 1, max_extra: int = 5,
-                 use_priority: bool = False):
+    # settings tuned on random training days (never the test days) by workforce.tune_rules
+    def __init__(self, config: CenterConfig | None = None, per_waiting: int | None = None,
+                 max_extra: int | None = None, use_priority: bool | None = None):
         super().__init__(config)
-        self.per_waiting, self.max_extra, self.use_priority = per_waiting, max_extra, use_priority
+        tuned = tuned_rules()["reactive"]
+        self.per_waiting = per_waiting if per_waiting is not None else tuned["per_waiting"]
+        self.max_extra = max_extra if max_extra is not None else tuned["max_extra"]
+        self.use_priority = use_priority if use_priority is not None else tuned["use_priority"]
 
     def decide(self, snapshot: Snapshot) -> dict:
         plan = super().decide(snapshot)
@@ -94,10 +116,12 @@ class MarginRulePolicy(FixedRulePolicy):
     A strong, simple opponent: it was found by looking at what the first RL agent
     actually did (see README). Margin tuned on random training days."""
 
-    def __init__(self, config: CenterConfig | None = None, margin: dict | None = None, priority: bool = True):
+    def __init__(self, config: CenterConfig | None = None, margin: dict | None = None,
+                 priority: bool | None = None):
         super().__init__(config)
-        self.margin = margin or {"general": 4, "technical": 0, "complaint": 0}
-        self.priority = priority
+        tuned = tuned_rules()["margin"]
+        self.margin = margin or dict(tuned["margin"])
+        self.priority = priority if priority is not None else tuned["priority"]
 
     def decide(self, snapshot: Snapshot) -> dict:
         plan = super().decide(snapshot)
