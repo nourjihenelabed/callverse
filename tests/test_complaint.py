@@ -259,7 +259,7 @@ def test_compensation_is_an_amount_the_grid_can_give(category, cents, expected):
 
 
 @pytest.mark.parametrize("text, days", [("coupé depuis 4 jours", 4), ("depuis une semaine", 7),
-                                        ("depuis trois jours", 3), ("depuis ce matin", None)])
+                                        ("depuis trois jours", 3), ("depuis ce matin", 0), ("sans internet", None)])
 def test_outage_days_are_read_from_the_customer_words(text, days):
     assert rules.outage_days(text) == days
 
@@ -287,3 +287,17 @@ def test_a_doubled_bill_is_never_severity_1():
     t = tools(billing_model(cents=0, severity=1))          # the model said "no money lost"
     result = steps.handle_complaint(call("Ma facture est de 75,94 € au lieu de 37,97 €."), t)
     assert result.severity == 2
+
+
+@pytest.mark.parametrize("text, days", [("ne marche plus depuis ce matin", 0), ("coupé depuis hier", 1),
+                                        ("depuis avant-hier", 2), ("depuis 3 heures", 0)])
+def test_same_day_outages_are_read(text, days):
+    assert rules.outage_days(text) == days
+
+
+def test_no_outage_credit_under_48_hours_even_if_the_model_guesses_one():
+    # a real call: "mon internet ne marche plus depuis ce matin" got 11,70 € from the model
+    case = steps.Case(category="technical", severity=2, compensation_cents=1170)
+    case.history = steps.History(box_code="box_fibre")
+    steps.check_fix(call("Bonjour, mon internet ne marche plus depuis ce matin.", "complaint_technical"), case, None)
+    assert case.compensation_cents == 0

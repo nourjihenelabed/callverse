@@ -11,6 +11,9 @@ Two steps, run from the project folder:
 
 2. Compare your grades with the AI reviewer's:
        python scripts/judge_agreement.py compare
+
+   Grades from someone else (a teammate, or a second AI evaluator) go in their own file, with who they are:
+       python scripts/judge_agreement.py compare --grades evaluation/second_evaluator_grades.csv --who "Claude (second AI evaluator)"
    It prints, for each criterion: exact agreement, agreement within 1 point, the average difference
    (+ = the AI is more generous than you) and Cohen's weighted kappa, and writes evaluation/judge_agreement.md.
 
@@ -166,14 +169,14 @@ def kappa_words(k: float | None) -> str:
     return "no better than chance"
 
 
-def report(result: dict) -> str:
-    out = ["## Does the AI reviewer agree with a person?", "",
-           "| Criterion | Calls | Same grade | Within 1 point | AI − person (average) | Weighted kappa |",
+def report(result: dict, who: str = "a person") -> str:
+    out = [f"## Does the AI reviewer agree with {who}?", "",
+           "| Criterion | Calls | Same grade | Within 1 point | AI reviewer − other grader (average) | Weighted kappa |",
            "|---|---|---|---|---|---|"]
     for c, r in result.items():
         out.append(f"| {c} | {r['calls']} | {r['exact']:.0%} | {r['within_1']:.0%} | {r['mean_difference']:+.2f} | "
                    f"{r['kappa'] if r['kappa'] is not None else '–'} ({kappa_words(r['kappa'])}) |")
-    out += ["", "_AI − person: + means the AI reviewer gives higher grades than the person. "
+    out += ["", f"_Other grader: {who}. + means the AI reviewer gives higher grades. "
                 "Kappa: 1 = perfect agreement, 0 = no better than chance (quadratic weights)._", ""]
     return "\n".join(out)
 
@@ -184,7 +187,9 @@ def main() -> None:
     e = sub.add_parser("export")
     e.add_argument("--run", help="the batch to sample; all saved calls if not given")
     e.add_argument("--calls", type=int, default=10)
-    sub.add_parser("compare")
+    c = sub.add_parser("compare")
+    c.add_argument("--grades", type=Path, default=CSV_PATH, help="the filled CSV")
+    c.add_argument("--who", default="a person", help="who gave these grades, written in the report")
     args = parser.parse_args()
 
     if args.step == "export":
@@ -197,14 +202,16 @@ def main() -> None:
         print(f"1. Read the calls:  {html_path}\n2. Grade them in:   {csv_path}\n3. Then run:        "
               f"python scripts/judge_agreement.py compare")
     else:
-        human = read_grades()
+        human = read_grades(args.grades)
         if not human:
-            raise SystemExit(f"No grades found in {CSV_PATH}: fill in the 4 columns (1 to 5) and save as CSV.")
+            raise SystemExit(f"No grades found in {args.grades}: fill in the 4 columns (1 to 5) and save as CSV.")
         result = agreement(human, load_calls())
-        text = report(result)
+        text = report(result, args.who)
         print(text)
-        REPORT_PATH.write_text(text, encoding="utf-8")
-        print(f"Written to {REPORT_PATH}")
+        out = REPORT_PATH if args.grades == CSV_PATH else args.grades.with_name(args.grades.stem + "_agreement.md")
+        out.write_text(text, encoding="utf-8")
+        print(f"Written to {out}")
+        return
 
 
 if __name__ == "__main__":

@@ -76,8 +76,15 @@ WEEK_WORDS = {"une": 7, "deux": 14}
 
 
 def outage_days(text: str) -> int | None:
-    """How many days the customer says the outage lasts: "coupé depuis 4 jours" -> 4, "une semaine" -> 7."""
+    """How many days the customer says the outage lasts: "coupé depuis 4 jours" -> 4, "une semaine" -> 7,
+    "depuis ce matin" -> 0, "depuis hier" -> 1. None when the customer gives no duration."""
     plain = _plain(text)
+    if re.search(r"avant-hier|avant hier", plain):
+        return 2
+    if re.search(r"\bhier\b", plain):
+        return 1
+    if re.search(r"ce matin|aujourd'?hui|ce soir|cet apres-midi|depuis (une|\d+) heures?|tout a l'heure", plain):
+        return 0                                     # the same day: under 48 hours, no outage credit
     if match := re.search(r"\b(\d+)\s*jours?\b", plain):
         return int(match.group(1))
     if match := re.search(rf"\b({'|'.join(DAY_WORDS)})\s+jours?\b", plain):

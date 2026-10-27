@@ -63,3 +63,4 @@ def test_agreement_numbers_and_report():
     assert r["mean_difference"] == pytest.approx(0.67)                       # the AI gave 5 where the person gave 3
     text = ja.report(result)
     assert "| accuracy | 3 | 67% | 67% | +0.67 |" in text
+    assert "agree with a teammate?" in ja.report(result, "a teammate")
