@@ -181,10 +181,13 @@ def check_fix(state: CallState, case: Case, tools: Tools) -> None:
     """5. Keep the compensation inside the grid and add any required step that is missing."""
     cents = rules.tidy_compensation(case.category, case.compensation_cents)
     if case.category == "technical":         # the outage credit is computed, never guessed by the model
-        credit = rules.outage_credit(rules.outage_days(_client_text(state)), case.history.box_code)
+        days = rules.outage_days(_client_text(state))
+        credit = rules.outage_credit(days, case.history.box_code)
         if credit is not None:
             # an outage of more than 48 hours is severity 3 or more (complaint_procedures.md)
             cents = min(credit, rules.AUTO_CAP_CENTS[max(case.severity, 3)])
+        elif days is not None and days < rules.OUTAGE_MIN_DAYS:
+            cents = 0                       # under 48 hours: no outage credit (the model once gave 11,70 €)
     case.compensation_cents, case.over_cap = rules.check_compensation(case.severity, cents)
 
     required = rules.REQUIRED_ACTIONS[case.category]

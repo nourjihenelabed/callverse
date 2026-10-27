@@ -1,0 +1,11 @@
+﻿call_id;reason;mood;relevance;accuracy;compliance;empathy;comment
+night-2-0034;complaint_billing;likely_to_churn;;;;;
+night-2-0018;change_payment_method;demanding;;;;;
+night-2-0005;check_invoice;interested_in_offer;;;;;
+night-2-0046;check_invoice;interested_in_offer;;;;;
+night-2-0036;activate_sim;dissatisfied;;;;;
+night-2-0040;internet_outage;likely_to_churn;;;;;
+night-2-0004;lost_sim;interested_in_offer;;;;;
+night-2-0026;change_payment_method;demanding;;;;;
+night-2-0035;activate_sim;dissatisfied;;;;;
+night-2-0020;activate_sim;impatient;;;;;
