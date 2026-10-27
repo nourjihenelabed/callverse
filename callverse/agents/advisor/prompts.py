@@ -109,6 +109,10 @@ C'est le responsable qui décidera : les actions ci-dessus sont seulement des pi
 Ne les promets pas. La raison du transfert est interne : ne la donne jamais au client."""
 
 ESCALATION_SENTENCE = "Votre dossier est transmis à un responsable, qui vous recontactera sous 48 heures ouvrées."
+RETENTION_SENTENCE = "Un responsable a étudié votre dossier et vous propose {offer}."
+OFFER_STILL_VALID = """
+Exception : l'offre de fidélisation du responsable ({offer}) est déjà décidée et reste valable. Tu peux la
+rappeler au client ; ne dis jamais que vous n'avez pas d'offre."""
 RETENTION_OFFER = """
 
 Le client veut partir. Un responsable a étudié son dossier et lui propose : {offer}.

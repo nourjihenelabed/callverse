@@ -175,7 +175,8 @@ def reminder(state: CallState) -> str:
     if result is None:
         return prompts.REMINDER
     if result.escalate:
-        return prompts.ESCALATED_REMINDER
+        offer = state.retention.offer if state.retention and state.retention.offer else None
+        return prompts.ESCALATED_REMINDER + (prompts.OFFER_STILL_VALID.format(offer=offer) if offer else "")
     return prompts.COMPLAINT_REMINDER.format(compensation=compensation_text(result.compensation_cents))
 
 
@@ -311,7 +312,29 @@ def first_answer(model, state: CallState) -> tuple[str, list[ToolCall], list]:
 def finish(text: str, state: CallState) -> str:
     """The checks done by code on every answer, in order."""
     text = no_consent_without_request(keep_compensation(text, state), state)
-    return tell_escalation(tidy_answer(text), state)
+    text = keep_retention_offer(tidy_answer(text), state)
+    return tell_escalation(text, state)
+
+
+NO_OFFER = re.compile(r"(pas|aucune?|plus) d[e'’ ]\s*(offre|avantage|geste|réduction|remise|promotion)|"
+                      r"rien à vous proposer", re.I)
+
+
+def keep_retention_offer(text: str, state: CallState) -> str:
+    """The supervisor's loyalty offer must reach the customer, and never be contradicted.
+    (The model once explained the conditions without the offer, then said "nous n'avons pas d'offre".)"""
+    r = state.retention
+    if r is None or not r.offer:
+        return text
+    kept = [s for s in sentences(text) if not NO_OFFER.search(s)]       # no "we have no offer" next to an offer
+    text = " ".join(kept) or text
+    said_before = any(r.offer_key.lower() in m.content.lower() for m in state.messages if m.role == "advisor")
+    if said_before or r.offer_key.lower() in text.lower():
+        return text
+    sentence = prompts.RETENTION_SENTENCE.format(offer=r.offer)
+    if text.endswith(prompts.CLOSING):
+        return f"{text[:-len(prompts.CLOSING)].rstrip()} {sentence} {prompts.CLOSING}"
+    return f"{text} {sentence}"
 
 
 CHANGE_REQUEST = re.compile(r"changer|modifier|ajouter|souscrire|activer|suspendre|résilier|annuler|passer à|"

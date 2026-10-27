@@ -114,3 +114,46 @@ def test_reviewer_checks_the_offer_was_presented():
                                                    Message(role="advisor", content="Je vous propose 3 mois offerts.")]})
     assert any("pas été présentée" in f.text for f in checks.compliance_findings(silent))
     assert not any("présentée" in f.text for f in checks.compliance_findings(told))
+
+
+# ---------------------------------------------------------------- the offer always reaches the customer
+# (a real call: the supervisor offered 3 free months on TV, the advisor first gave only the conditions,
+# then, after a complaint was escalated, said "nous n'avons pas d'offre ... pour rester fidèle")
+
+OFFER = RetentionResult(high_risk=True, supervisor=True, offer="3 mois offerts sur l'option TV",
+                        offer_key="3 mois offerts")
+
+
+def test_a_forgotten_offer_is_added():
+    state = call("Je veux résilier mon abonnement.", wants_to_leave=True, retention=OFFER)
+    text = advisor.finish("Vous pouvez résilier sans frais. La résiliation prend effet sous 10 jours. "
+                          "Puis-je vous aider pour autre chose ?", state)
+    assert "3 mois offerts sur l'option TV" in text and text.endswith("Puis-je vous aider pour autre chose ?")
+
+
+def test_saying_there_is_no_offer_is_removed():
+    from callverse.state import ComplaintResult
+
+    escalated = ComplaintResult(category="service_quality", severity=2, actions=[], escalate=True)
+    state = call("Vous n'avez rien à me proposer ?", wants_to_leave=True, retention=OFFER,
+                 is_complaint=True, complaint_result=escalated)
+    text = advisor.finish("Je comprends votre déception. Malheureusement, nous n'avons pas d'offre de réduction "
+                          "de facture ou d'avantage pour rester fidèle à l'heure actuelle. Votre dossier est transmis "
+                          "à un responsable qui vous contactera sous 48 heures ouvrées.", state)
+    assert "pas d'offre" not in text and "3 mois offerts" in text and "48 heures" in text
+
+
+def test_the_offer_is_not_repeated_every_turn():
+    state = call("Je veux partir.", wants_to_leave=True, retention=OFFER).model_copy(update={"messages": [
+        Message(role="client", content="Je veux partir."),
+        Message(role="advisor", content="Un responsable vous propose 3 mois offerts sur l'option TV."),
+        Message(role="client", content="Et les frais ?")]})
+    assert advisor.finish("Il n'y a pas de frais de résiliation.", state) == "Il n'y a pas de frais de résiliation."
+
+
+def test_escalated_complaint_instructions_keep_the_offer():
+    from callverse.state import ComplaintResult
+
+    escalated = ComplaintResult(category="service_quality", severity=2, actions=[], escalate=True)
+    state = call("Je suis déçu.", wants_to_leave=True, retention=OFFER, is_complaint=True, complaint_result=escalated)
+    assert "reste valable" in advisor.reminder(state) and "3 mois offerts" in advisor.reminder(state)
