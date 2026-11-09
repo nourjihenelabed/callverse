@@ -1,0 +1,863 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CallVerse Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: an operations console. Top bar with live system status; four views. The live floor is three
+   panes: set up a call | watch the agents work | the case file (CallState) filling in. */
+:root{
+  --bg:#0A0F1E; --panel:#111A2E; --panel2:#17223B; --raise:#1D2946; --line:#25324F; --line2:#33436A;
+  --ink:#E9EDF7; --muted:#8B97B5; --faint:#5D6A8A;
+  --accent:#FFB547; --accent-ink:#1A1206; --llm:#9D9BFF; --code:#3DD6B5; --bad:#FF7A7A; --good:#3DD6B5; --warn:#FFB547;
+  --font:"Manrope","Segoe UI",system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{background:#0A0F1E}
+body{margin:0;min-height:100vh}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14.5px;line-height:1.5;
+  background-image:radial-gradient(1200px 500px at 15% -10%,rgba(157,155,255,.10),transparent 60%),radial-gradient(900px 400px at 100% 0%,rgba(255,181,71,.06),transparent 60%);background-attachment:fixed;background-repeat:no-repeat}
+button,select,input{font:inherit;color:inherit}
+h1,h2,h3,h4{margin:0;letter-spacing:-.01em;text-wrap:balance}
+p{margin:0}
+.mono{font-family:var(--mono)}
+.muted{color:var(--muted)}
+.label{font-family:var(--mono);font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- top bar */
+.top{position:sticky;top:0;z-index:20;background:rgba(10,15,30,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.top .in{display:flex;align-items:center;gap:22px;padding:12px 22px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px}
+.brand b{font-weight:800;font-size:1.08rem;letter-spacing:-.02em}
+.brand span{font-size:.78rem;color:var(--muted)}
+.nav{display:flex;gap:4px;max-width:100%;overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:3px}
+.nav button{border:0;background:transparent;padding:7px 14px;border-radius:7px;cursor:pointer;color:var(--muted);font-weight:600;font-size:.88rem}
+.nav button[aria-selected="true"]{background:var(--raise);color:var(--ink)}
+.status{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:.72rem;padding:5px 10px;border-radius:999px;border:1px solid var(--line);background:var(--panel);white-space:nowrap}
+.pill i{width:8px;height:8px;border-radius:50%;background:var(--faint)}
+.pill.ok i{background:var(--good);box-shadow:0 0 8px var(--good)}
+.pill.bad i{background:var(--bad);box-shadow:0 0 8px var(--bad)}
+main{padding:20px 22px 40px}
+.view[hidden]{display:none}
+
+/* ---------- panels */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;min-width:0}
+.panel>.hd{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.panel>.bd{padding:16px}
+.panel h3{font-size:.98rem;font-weight:700}
+
+/* ---------- live floor */
+.floor{display:grid;grid-template-columns:310px minmax(0,1fr) 360px;gap:16px;align-items:start}
+.setup .bd{display:grid;gap:16px}
+.presets{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.preset{border:1px solid var(--line);background:var(--panel2);border-radius:10px;padding:9px 10px;text-align:left;cursor:pointer;display:grid;gap:2px}
+.preset:hover{border-color:var(--line2);background:var(--raise)}
+.preset b{font-size:.84rem}
+.preset span{font-size:.72rem;color:var(--muted)}
+.field{display:grid;gap:6px}
+select,input[type=text]{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:9px 10px;outline:none}
+select:focus,input[type=text]:focus{border-color:var(--accent)}
+.cust{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;display:grid;gap:8px;font-size:.84rem}
+.cust .row{display:flex;justify-content:space-between;gap:10px}
+.cust .row span:first-child{color:var(--muted)}
+.cust .row span:last-child{text-align:right}
+.risk{display:grid;gap:5px}
+.meter{position:relative;height:8px;border-radius:5px;background:var(--line)}
+.meter .f{position:absolute;inset:0 auto 0 0;border-radius:5px;background:linear-gradient(90deg,var(--code),var(--warn),var(--bad))}
+.meter .mark{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--ink);left:70%}
+.risk small{font-size:.72rem;color:var(--muted)}
+.moods{display:flex;flex-wrap:wrap;gap:6px}
+.mood{border:1px solid var(--line);background:var(--panel2);border-radius:999px;padding:5px 11px;cursor:pointer;font-size:.8rem}
+.mood[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+.moodtxt{font-size:.78rem;color:var(--muted);min-height:2.4em}
+.check{display:flex;gap:8px;align-items:center;font-size:.82rem;color:var(--muted)}
+.go{border:0;border-radius:12px;padding:13px;font-weight:800;font-size:1rem;cursor:pointer;background:var(--accent);color:var(--accent-ink);display:flex;align-items:center;justify-content:center;gap:10px}
+.go:disabled{opacity:.55;cursor:default}
+.ghost{border:1px solid var(--line2);background:transparent;border-radius:10px;padding:9px 12px;cursor:pointer;font-weight:600;font-size:.84rem}
+.ghost:hover{background:var(--raise)}
+.warnbox{border:1px solid rgba(255,122,122,.4);background:rgba(255,122,122,.08);color:#FFC9C9;border-radius:10px;padding:10px 12px;font-size:.8rem}
+
+.stage{display:grid;gap:16px;min-width:0}
+.map{padding:10px 12px 4px;overflow-x:auto}
+.map svg{display:block;width:100%;min-width:560px;height:auto}
+.n rect{fill:var(--panel2);stroke:var(--line2);stroke-width:1.5;transition:all .25s}
+.n.llm rect{stroke:rgba(157,155,255,.55)}
+.n.code rect{stroke:rgba(61,214,181,.55)}
+.n.mixed rect{stroke:var(--line2)}
+.n text.t{fill:var(--ink);font-family:var(--font);font-weight:700;font-size:14px}
+.n text.s{fill:var(--muted);font-family:var(--mono);font-size:10px}
+.n.seen rect{fill:var(--raise)}
+.n.live rect{fill:rgba(255,181,71,.14);stroke:var(--accent);stroke-width:2.5}
+.n .ring{fill:none;stroke:var(--accent);stroke-width:2;opacity:0}
+.n.live .ring{animation:ring 1.4s ease-out infinite}
+@keyframes ring{0%{opacity:.8;transform:scale(1)}100%{opacity:0;transform:scale(1.08)}}
+.n .ring{transform-box:fill-box;transform-origin:center}
+.e{fill:none;stroke:var(--line2);stroke-width:1.4}
+.e.on{stroke:var(--accent);stroke-dasharray:6 5;animation:flow .8s linear infinite}
+@keyframes flow{to{stroke-dashoffset:-11}}
+.el{fill:var(--faint);font-family:var(--mono);font-size:10px}
+.el.tw{fill:var(--accent);opacity:.85}
+.el.zl{letter-spacing:.1em;font-size:9.5px}
+.e.twin{stroke:var(--accent);stroke-dasharray:5 4;opacity:.7}
+.wfnode{cursor:pointer}
+.wfnode rect{stroke-dasharray:5 4}
+.wfnode:hover rect,.wfnode:focus-visible rect{fill:var(--raise);stroke:var(--accent)}
+.ah{fill:var(--line2)}
+.nowbar{display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid var(--line);font-size:.86rem;min-height:44px}
+.dots{display:inline-flex;gap:3px}
+.dots i{width:5px;height:5px;border-radius:50%;background:var(--accent);animation:blink 1.2s infinite}
+.dots i:nth-child(2){animation-delay:.2s}.dots i:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,80%,100%{opacity:.2}40%{opacity:1}}
+.clock{margin-left:auto;font-family:var(--mono);color:var(--muted)}
+
+.chat{padding:16px;display:grid;gap:12px;max-height:620px;min-height:340px;overflow-y:auto;align-content:start}
+.empty{display:grid;place-items:center;text-align:center;gap:8px;color:var(--muted);padding:40px 10px}
+.empty b{color:var(--ink);font-size:1.05rem}
+.msg{display:grid;grid-template-columns:34px minmax(0,1fr);gap:10px;max-width:86%;animation:pop .25s ease-out}
+.msg.advisor{justify-self:end;grid-template-columns:minmax(0,1fr) 34px}
+.msg.advisor .av{order:2}
+.av{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-weight:800;font-size:.75rem}
+.msg.client .av{background:rgba(157,155,255,.18);color:var(--llm)}
+.msg.advisor .av{background:rgba(255,181,71,.16);color:var(--accent)}
+.bub{padding:10px 13px;border-radius:12px;background:var(--panel2);border:1px solid var(--line);font-size:.92rem}
+.msg.advisor .bub{background:#1E2442;border-color:#2C3561}
+.who{font-size:.7rem;color:var(--muted);margin-bottom:3px;font-family:var(--mono)}
+.msg.advisor .who{text-align:right}
+.toolrow{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;margin-top:5px}
+.tool{font-family:var(--mono);font-size:.66rem;color:var(--code);border:1px solid rgba(61,214,181,.35);border-radius:6px;padding:1px 6px}
+.sys{justify-self:center;max-width:94%;display:flex;gap:10px;align-items:flex-start;font-size:.8rem;border:1px dashed var(--line2);border-radius:10px;padding:8px 12px;color:var(--muted);animation:pop .25s ease-out}
+.sys b{color:var(--ink)}
+.sys .tag{font-family:var(--mono);font-size:.64rem;letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;border-radius:5px;white-space:nowrap}
+.tag.llm{background:rgba(157,155,255,.15);color:var(--llm)}
+.tag.code{background:rgba(61,214,181,.13);color:var(--code)}
+.tag.mixed{background:rgba(255,181,71,.13);color:var(--accent)}
+.typing{justify-self:start;font-size:.8rem;color:var(--muted);display:flex;gap:8px;align-items:center}
+.typing.advisor{justify-self:end}
+@keyframes pop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* ---------- case file */
+.case .bd{display:grid;gap:14px}
+.kv{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.kv div{background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:8px 10px;display:grid;gap:2px;min-width:0}
+.kv span{font-family:var(--mono);font-size:.64rem;color:var(--muted);letter-spacing:.06em}
+.kv b{font-size:.86rem;overflow-wrap:anywhere}
+.yes{color:var(--accent)}
+.card{border:1px solid var(--line);border-radius:11px;padding:12px;display:grid;gap:8px;background:var(--panel2);animation:pop .3s ease-out}
+.card .t{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.card .t b{font-size:.88rem}
+.card ul{margin:0;padding-left:17px;display:grid;gap:3px;font-size:.8rem;color:var(--muted)}
+.sev{display:inline-flex;gap:3px}
+.sev i{width:14px;height:6px;border-radius:3px;background:var(--line2)}
+.sev i.on{background:var(--warn)}
+.money{font-size:1.4rem;font-weight:800;font-variant-numeric:tabular-nums}
+.badge{font-family:var(--mono);font-size:.68rem;padding:2px 8px;border-radius:999px;border:1px solid var(--line2);white-space:nowrap}
+.badge.good{color:var(--good);border-color:rgba(61,214,181,.45)}
+.badge.bad{color:var(--bad);border-color:rgba(255,122,122,.45)}
+.badge.warn{color:var(--warn);border-color:rgba(255,181,71,.45)}
+.review{display:grid;gap:8px}
+.overall{display:flex;align-items:center;gap:14px}
+.overall .big{font-size:2.3rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.crit{display:grid;gap:4px;cursor:pointer;border-radius:8px;padding:4px 2px}
+.crit .r{display:grid;grid-template-columns:136px minmax(0,1fr) 22px;gap:8px;align-items:center;font-size:.8rem}
+.bar{height:7px;border-radius:4px;background:var(--line)}
+.bar i{display:block;height:100%;border-radius:4px}
+.crit p{font-size:.76rem;color:var(--muted);padding-left:4px}
+.crit .src{font-family:var(--mono);font-size:.6rem;padding:1px 5px;border-radius:4px;margin-left:6px}
+.timeline{display:grid;gap:5px;font-size:.76rem;max-height:200px;overflow-y:auto}
+.timeline div{display:grid;grid-template-columns:44px minmax(0,1fr);gap:8px}
+.timeline span{font-family:var(--mono);color:var(--faint)}
+
+/* ---------- agents */
+.intro{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:20px;margin-bottom:20px}
+.hero h1{font-size:clamp(1.8rem,3.4vw,2.6rem);font-weight:800;line-height:1.08}
+.hero p{color:var(--muted);margin-top:10px;max-width:62ch;font-size:.98rem}
+.flow{display:grid;gap:8px;counter-reset:s}
+.flow div{display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;font-size:.86rem;align-items:start}
+.flow div::before{counter-increment:s;content:counter(s);width:24px;height:24px;border-radius:7px;background:var(--raise);display:grid;place-items:center;font-family:var(--mono);font-size:.75rem;color:var(--accent)}
+.agents{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.agent{display:grid;gap:10px;padding:16px;align-content:start}
+.agent .t{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.agent h3{font-size:1.08rem}
+.agent ul{margin:0;padding-left:17px;display:grid;gap:4px;font-size:.84rem;color:#C5CDE0}
+.agent .say{font-size:.84rem;border-left:2px solid var(--accent);padding:4px 10px;color:var(--ink);font-style:italic}
+.agent .file{font-family:var(--mono);font-size:.72rem;color:var(--muted)}
+.agent .try{justify-self:start}
+
+/* ---------- history */
+.hist{display:grid;grid-template-columns:minmax(0,430px) minmax(0,1fr);gap:16px;align-items:start}
+.list{max-height:680px;overflow-y:auto}
+.item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;padding:11px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+.item:hover,.item.sel{background:var(--panel2)}
+.item b{font-size:.86rem}
+.item small{color:var(--muted);font-size:.74rem}
+.detail{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px}
+
+/* ---------- results */
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+.toolbar select{width:auto;min-width:180px}
+.kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:16px}
+.kpi{padding:14px;display:grid;gap:2px}
+.kpi b{font-size:1.6rem;font-weight:800;font-variant-numeric:tabular-nums}
+.kpi span{font-size:.76rem;color:var(--muted)}
+.kpi em{font-style:normal;font-family:var(--mono);font-size:.72rem}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:16px;align-items:start}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.84rem;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-family:var(--mono);font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500}
+td.n,th.n{text-align:right}
+tr.best td{color:var(--good)}
+.tips{display:grid;gap:8px;margin:0;padding-left:18px;font-size:.86rem}
+
+/* ---------- workforce */
+.wfhead{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:16px;margin-bottom:16px}
+.rlgrid{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px 12px;font-size:.84rem}
+.rlgrid > b{font-family:var(--mono);font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);padding-top:2px}
+.scen{display:flex;flex-wrap:wrap;gap:6px}
+.scen button{border:1px solid var(--line);background:var(--panel2);border-radius:999px;padding:5px 11px;cursor:pointer;font-size:.8rem}
+.scen button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:700}
+.scen button.held{border-style:dashed}
+.wfctl{display:grid;gap:12px}
+.wfrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.wfrow input{width:110px}
+.lanes{display:grid;gap:12px}
+.lane{display:grid;grid-template-columns:120px minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.lane h4{font-size:.92rem}
+.lane small{font-size:.72rem;color:var(--muted);display:block}
+.people{display:flex;flex-wrap:wrap;gap:4px;align-items:center;min-height:30px}
+.person{width:14px;height:22px;position:relative}
+.person::before{content:"";position:absolute;left:3px;top:0;width:8px;height:8px;border-radius:50%;background:var(--pc,var(--code))}
+.person::after{content:"";position:absolute;left:0;top:10px;width:14px;height:12px;border-radius:7px 7px 3px 3px;background:var(--pc,var(--code))}
+.person.extra{--pc:var(--accent)}
+.person.cut{opacity:.25}
+.queue{display:flex;flex-wrap:wrap;gap:3px;align-items:center;min-height:30px}
+.queue i{width:9px;height:9px;border-radius:50%;background:var(--bad);box-shadow:0 0 6px rgba(255,122,122,.5)}
+.queue span{font-family:var(--mono);font-size:.74rem;color:var(--muted);margin-left:4px}
+.floorclock{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.floorclock .big{font-family:var(--mono);font-size:1.8rem;font-weight:500}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.legend2{display:flex;gap:14px;flex-wrap:wrap;font-size:.78rem;color:var(--muted)}
+.legend2 span{display:inline-flex;align-items:center;gap:6px}
+.legend2 i{width:14px;height:3px;border-radius:2px;display:inline-block}
+.charts{display:grid;gap:14px}
+.charts svg{display:block;width:100%;height:auto;min-width:520px}
+.ax{fill:var(--faint);font-family:var(--mono);font-size:10px}
+.grid line{stroke:var(--line);stroke-width:1}
+.cmp td.best{color:var(--good);font-weight:700}
+@media (max-width:1250px){.floor{grid-template-columns:300px minmax(0,1fr)}.case{grid-column:1 / -1}.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.agents{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:900px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.wfhead,.lane{grid-template-columns:minmax(0,1fr)}.floor,.hist,.detail,.intro,.grid2{grid-template-columns:minmax(0,1fr)}.agents{grid-template-columns:minmax(0,1fr)}.status{margin-left:0}main{padding:14px}.top .in{padding:10px 14px}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header class="top"><div class="in">
+  <div class="brand">
+    <svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#FFB547"/><path d="M9 18v-3a7 7 0 0 1 14 0v3" fill="none" stroke="#1A1206" stroke-width="2.4" stroke-linecap="round"/><rect x="7" y="17" width="4.5" height="7" rx="2" fill="#1A1206"/><rect x="20.5" y="17" width="4.5" height="7" rx="2" fill="#1A1206"/></svg>
+    <div><b>CallVerse Studio</b><br><span>Digital twin of a telecom call center</span></div>
+  </div>
+  <nav class="nav" role="tablist">
+    <button role="tab" data-view="floor" aria-selected="true">Live floor</button>
+    <button role="tab" data-view="agents" aria-selected="false">Agents</button>
+    <button role="tab" data-view="workforce" aria-selected="false">Workforce</button>
+    <button role="tab" data-view="history" aria-selected="false">Call history</button>
+    <button role="tab" data-view="results" aria-selected="false">Results</button>
+  </nav>
+  <div class="status" id="status">
+    <span class="pill" id="st-db"><i></i>Database</span>
+    <span class="pill" id="st-ollama"><i></i>Ollama</span>
+    <span class="pill" id="st-model"><i></i>model</span>
+  </div>
+</div></header>
+
+<main>
+<!-- ================= LIVE FLOOR ================= -->
+<section class="view" id="view-floor">
+  <div class="floor">
+    <div class="panel setup">
+      <div class="hd"><h3>New call</h3><span class="label">simulation</span></div>
+      <div class="bd">
+        <div class="field"><span class="label">Quick scenarios</span>
+          <div class="presets" id="presets"></div>
+        </div>
+        <div class="field"><label class="label" for="customer">Customer</label>
+          <select id="customer"></select>
+          <input type="text" id="customerOther" placeholder="or type a customer id, e.g. 7590-VHVEG" hidden>
+        </div>
+        <div class="cust" id="custcard"><span class="muted">Loading customers…</span></div>
+        <div class="field"><label class="label" for="reason">Why they call</label><select id="reason"></select></div>
+        <div class="field"><span class="label">Mood</span><div class="moods" id="moods"></div><p class="moodtxt" id="moodtxt"></p></div>
+        <label class="check"><input type="checkbox" id="save" checked> Save the call (batch "studio", shown in history and the dashboard)</label>
+        <div id="warn"></div>
+        <button class="go" id="go">Place the call</button>
+        <button class="ghost" id="stop" hidden>Hang up the simulation</button>
+      </div>
+    </div>
+
+    <div class="stage">
+      <div class="panel">
+        <div class="map">
+          <svg viewBox="0 0 640 352" aria-label="Agents of one call, and the workforce manager">
+            <defs><marker id="mt" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path fill="var(--accent)" d="M0,0L10,5L0,10z"/></marker><marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path class="ah" d="M0,0L10,5L0,10z"/></marker></defs>
+            <path class="e" id="e-ca" d="M168 64 H238" marker-end="url(#m)"/>
+            <path class="e" id="e-ac" d="M240 88 H170" marker-end="url(#m)"/>
+            <path class="e" id="e-ax" d="M392 62 C428 62 428 40 458 40" marker-end="url(#m)"/>
+            <path class="e" id="e-xa" d="M458 58 C434 58 430 76 394 76" marker-end="url(#m)"/>
+            <path class="e" id="e-ar" d="M392 92 C428 92 428 130 458 130" marker-end="url(#m)"/>
+            <path class="e" id="e-ra" d="M458 146 C430 146 426 100 394 100" marker-end="url(#m)"/>
+            <path class="e" id="e-cq" d="M96 108 V196 H238" marker-end="url(#m)"/>
+            <text class="el" x="182" y="56">speaks</text><text class="el" x="182" y="104">answers</text>
+            <text class="el" x="398" y="30">complaint</text><text class="el" x="398" y="148">leaving</text>
+            <text class="el" x="106" y="188">call ends</text>
+            <g class="n llm" data-node="client"><rect class="ring" x="24" y="44" width="144" height="64" rx="12"/><rect x="24" y="44" width="144" height="64" rx="12"/><text class="t" x="40" y="72">Customer</text><text class="s" x="40" y="92">LLM · mood + account</text></g>
+            <g class="n mixed" data-node="advisor"><rect class="ring" x="240" y="44" width="152" height="64" rx="12"/><rect x="240" y="44" width="152" height="64" rx="12"/><text class="t" x="256" y="72">Advisor</text><text class="s" x="256" y="92">LLM + RAG + guards</text></g>
+            <g class="n mixed" data-node="complaint"><rect class="ring" x="460" y="12" width="168" height="62" rx="12"/><rect x="460" y="12" width="168" height="62" rx="12"/><text class="t" x="474" y="38">Complaint specialist</text><text class="s" x="474" y="58">rules decide the €</text></g>
+            <g class="n code" data-node="retention"><rect class="ring" x="460" y="104" width="168" height="62" rx="12"/><rect x="460" y="104" width="168" height="62" rx="12"/><text class="t" x="474" y="130">Retention supervisor</text><text class="s" x="474" y="150">churn risk ≥ 0.70</text></g>
+            <g class="n mixed" data-node="quality"><rect class="ring" x="240" y="168" width="152" height="62" rx="12"/><rect x="240" y="168" width="152" height="62" rx="12"/><text class="t" x="256" y="194">Reviewer</text><text class="s" x="256" y="214">6 grades · always last</text></g>
+            <line x1="12" x2="628" y1="248" y2="248" stroke="var(--line)" stroke-dasharray="3 4"/>
+            <text class="el zl" x="24" y="268">ONE CALL ABOVE · THE TWIN BELOW, AFTER A BATCH OF CALLS</text>
+            <path class="e twin" d="M316 230 V312 H458" marker-end="url(#mt)"/>
+            <text class="el tw" x="326" y="290">first-call resolution</text>
+            <text class="el tw" x="326" y="304">→ repeat calls</text>
+            <text class="el" x="24" y="296">Unresolved customers call back and some</text>
+            <text class="el" x="24" y="311">calls become complaints: the agents' quality</text>
+            <text class="el" x="24" y="326">changes how many advisors the floor needs.</text>
+            <g class="n code wfnode" data-node="workforce" tabindex="0" role="button" aria-label="Open the workforce manager"><rect x="460" y="280" width="168" height="62" rx="12"/><text class="t" x="474" y="306">Workforce manager</text><text class="s" x="474" y="326">RL · every 15 min →</text></g>
+            <text class="el" x="460" y="196">Routing is plain code</text>
+            <text class="el" x="460" y="211">(graph.py): the LLM never</text>
+            <text class="el" x="460" y="226">decides where a call goes.</text>
+          </svg>
+        </div>
+        <div class="nowbar" id="nowbar"><span class="muted">Ready. Choose a scenario and place a call.</span><span class="clock" id="clock">00:00</span></div>
+      </div>
+      <div class="panel">
+        <div class="hd"><h3>Conversation</h3><span class="label" id="callid">no call yet</span></div>
+        <div class="chat" id="chat">
+          <div class="empty"><b>The floor is quiet.</b><span>Pick a quick scenario on the left, then place the call. Each agent lights up while it works.<br>A call takes 1 to 3 minutes with an 8B model on a laptop.</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel case">
+      <div class="hd"><h3>Case file</h3><span class="label">CallState</span></div>
+      <div class="bd" id="case"><p class="muted">Fills in live: what the advisor understood, the decisions of the specialists, the outcome and the review.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= AGENTS ================= -->
+<section class="view" id="view-agents" hidden>
+  <div class="intro">
+    <div class="hero">
+      <div class="label" style="color:var(--accent)">How the virtual center works</div>
+      <h1>Five agents share one case file. A sixth decides the staffing.</h1>
+      <p>Every call is a <span class="mono">CallState</span> passed between agents by a LangGraph graph. Each agent reads it and returns only what it changes. Where money, escalation or retention offers are at stake, code rules decide and the LLM only explains.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+        <span class="sys" style="animation:none;padding:4px 10px"><span class="tag llm">LLM</span> decides by reading</span>
+        <span class="sys" style="animation:none;padding:4px 10px"><span class="tag code">code</span> rules decide</span>
+        <span class="sys" style="animation:none;padding:4px 10px"><span class="tag mixed">LLM + code</span> model drafts, code checks</span>
+      </div>
+    </div>
+    <div class="panel"><div class="bd flow">
+      <div><span>The <b>customer</b> opens the call with its reason, mood and real account.</span></div>
+      <div><span>The <b>advisor</b> understands the message (intent, complaint, leaving) and answers from the rules (RAG) and the customer file.</span></div>
+      <div><span>If it's a complaint, the graph calls the <b>complaint specialist</b> first: category, severity, capped compensation, escalation, ticket.</span></div>
+      <div><span>If the customer wants to leave, the <b>retention supervisor</b> reads the churn risk and decides on an offer.</span></div>
+      <div><span>The call ends when the customer accepts, refuses or hangs up. The <b>reviewer</b> grades it on 6 criteria.</span></div>
+      <div><span>The results feed the <b>workforce manager</b>: first-call resolution changes how many advisors are needed.</span></div>
+    </div></div>
+  </div>
+  <div class="agents" id="agents"></div>
+</section>
+
+<!-- ================= WORKFORCE ================= -->
+<section class="view" id="view-workforce" hidden>
+  <div class="wfhead">
+    <div class="panel"><div class="bd" style="display:grid;gap:12px">
+      <div class="label" style="color:var(--accent)">The floor manager · reinforcement learning</div>
+      <h2 style="font-size:1.6rem;font-weight:800">Every 15 minutes: how many advisors on each queue?</h2>
+      <p class="muted">Too few and customers hang up, too many and the center pays idle staff. Erlang C plans the day in the morning from the forecast and never adapts. The RL agent corrects that plan during the day. The floor is a SimPy simulation calibrated on 444,448 real calls (Technion bank call center): 3 queues, 25 advisors with skills, customers who hang up after about 8 minutes.</p>
+      <div class="wfctl">
+        <div class="scen" id="scen"></div>
+        <p class="muted" id="scenTxt" style="font-size:.84rem"></p>
+        <div class="wfrow"><label class="label" for="wfDay">Day</label><input type="text" id="wfDay" value="10000" inputmode="numeric">
+          <button class="go" id="wfGo" style="padding:10px 18px;font-size:.92rem">Simulate this day</button>
+          <span class="muted" id="wfNote" style="font-size:.8rem"></span></div>
+      </div>
+    </div></div>
+    <div class="panel"><div class="hd"><h3>The RL problem</h3><span class="label">PPO · Stable-Baselines3</span></div><div class="bd rlgrid">
+      <b>State</b><span>20 numbers: time of day; per queue customers waiting, advisors working, recent wait, the Erlang C plan, calls received vs forecast; last SLA and hang-ups.</span>
+      <b>Action</b><span>Correct the Erlang C plan by −3 to +3 advisors per queue, and switch priority on or off.</span>
+      <b>Reward</b><span>Minus the cost of the 15 minutes: staff pay (25 €/h) + <b>50 €</b> per customer who hangs up + <b>8 €</b> per call answered after 20 s.</span>
+      <b>Training</b><span>3 agents (seeds 0, 1, 2), 400,000 decisions each, on random days with surprise peaks. Tested on 8 scenarios × 30 days it never saw; 4 of them (dashed) unlike anything in training.</span>
+      <b>Realism</b><span>An advisor called in stays at least 1 hour; changing queue takes 2 minutes. Same rules for every policy.</span>
+    </div></div>
+  </div>
+
+  <div class="panel" style="margin-bottom:16px"><div class="hd"><h3>This day, four floor managers</h3><span class="label" id="wfTitle">same calls for everyone</span></div><div class="bd tw" id="wfCmp"><p class="muted">Choose a scenario and simulate the day.</p></div></div>
+
+  <div class="grid2">
+    <div class="panel"><div class="hd"><h3>The floor, live</h3>
+        <select id="wfPolicy" style="width:auto"></select></div>
+      <div class="bd" style="display:grid;gap:14px">
+        <div class="floorclock"><span class="big" id="wfClock">08:00</span>
+          <button class="ghost" id="wfPlay">▶ Play the day</button>
+          <span class="muted" id="wfStatus" style="font-size:.82rem"></span></div>
+        <input type="range" id="wfSlider" min="0" max="51" value="0" aria-label="Time of day">
+        <div class="lanes" id="lanes"></div>
+        <div class="legend2"><span><span class="person" style="transform:scale(.7)"></span>advisor from the Erlang C plan</span><span><span class="person extra" style="transform:scale(.7)"></span>added by this manager</span><span><span class="person cut" style="transform:scale(.7)"></span>plan seat left empty</span><span><i style="background:var(--bad);width:9px;height:9px;border-radius:50%"></i>customer waiting</span></div>
+      </div></div>
+    <div class="panel"><div class="hd"><h3>Advisors on duty through the day</h3><span class="label">strip = calls ÷ forecast</span></div>
+      <div class="bd"><div class="legend2" id="wfLegend" style="margin-bottom:10px"></div><div class="charts tw" id="wfCharts"></div></div></div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel"><div class="hd"><h3>Over 8 scenarios × 30 test days</h3><span class="label">workforce.compare</span></div><div class="bd tw" id="wfm2"></div></div>
+    <div class="panel"><div class="hd"><h3>Digital twin: the agents' calls change the staffing</h3><span class="label">workforce.twin</span></div><div class="bd" id="twin2"></div></div>
+  </div>
+</section>
+
+<!-- ================= HISTORY ================= -->
+<section class="view" id="view-history" hidden>
+  <div class="toolbar"><label class="label" for="histRun">Batch</label><select id="histRun"></select><span class="muted" id="histCount"></span></div>
+  <div class="hist">
+    <div class="panel list" id="histList"><div class="bd muted">Loading…</div></div>
+    <div class="detail" id="histDetail">
+      <div class="panel"><div class="hd"><h3>Conversation</h3><span class="label" id="hId">select a call</span></div><div class="chat" id="hChat"><div class="empty"><b>Pick a call on the left.</b><span>Every saved call can be replayed with its decisions and grades.</span></div></div></div>
+      <div class="panel case"><div class="hd"><h3>Case file</h3><button class="ghost" id="hReplay" hidden>Replay</button></div><div class="bd" id="hCase"></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= RESULTS ================= -->
+<section class="view" id="view-results" hidden>
+  <div class="toolbar"><label class="label" for="resRun">Batch</label><select id="resRun"></select><span class="muted">KPIs of the saved calls, straight from the database.</span></div>
+  <div class="kpis" id="kpis"></div>
+  <div class="grid2">
+    <div class="panel"><div class="hd"><h3>Reviewer grades by criterion</h3><span class="label">1 to 5</span></div><div class="bd" id="criteria"></div></div>
+    <div class="panel"><div class="hd"><h3>By customer mood</h3></div><div class="bd tw" id="moodsTable"></div></div>
+  </div>
+  <div class="grid2">
+    <div class="panel"><div class="hd"><h3>Digital twin: calls change the staffing</h3><span class="label">workforce/twin.py</span></div><div class="bd" id="twin"></div></div>
+    <div class="panel"><div class="hd"><h3>Workforce manager vs the rules</h3><span class="label">PPO · 30 days per scenario</span></div><div class="bd tw" id="wfm"></div></div>
+  </div>
+  <div class="grid2">
+    <div class="panel"><div class="hd"><h3>What the advisor should improve first</h3><span class="label">reviewer's tips</span></div><div class="bd" id="tips"></div></div>
+    <div class="panel"><div class="hd"><h3>Can we trust the reviewer?</h3><span class="label">10 calls · 2nd grader</span></div><div class="bd" id="judge"></div></div>
+  </div>
+</section>
+</main>
+
+<script>
+/* ---------------------------------------------------------------- vocabulary */
+const NODE = {client:"Customer",advisor:"Advisor",complaint:"Complaint specialist",complaint_follow_up:"Complaint specialist",
+  retention:"Retention supervisor",quality:"Reviewer",end_call:"Turn limit"};
+const KIND = {client:"llm",advisor:"mixed",complaint:"mixed",complaint_follow_up:"code",retention:"code",quality:"mixed",end_call:"code"};
+const DOING = {client:"is thinking of an answer",advisor:"understands, searches the rules and answers",complaint:"classifies, checks the grid and decides",
+  complaint_follow_up:"updates the ticket",retention:"reads the churn risk and decides",quality:"grades the call",end_call:"closes the call"};
+const MAPNODE = {complaint_follow_up:"complaint"};
+const REASON = {check_invoice:"Understand my bill",offer_information:"Ask about an offer",change_payment_method:"Change payment method",
+  add_option:"Add an option",lost_sim:"Lost SIM card",rio_code:"Get my RIO code",cancel_contract:"Cancel my contract",
+  internet_outage:"Internet is down",slow_internet:"Slow internet",activate_sim:"Activate a new SIM",
+  complaint_billing:"Complaint: bill doubled",complaint_technical:"Complaint: outage for 4 days",complaint_service_quality:"Complaint: promised callback",
+  complaint_delivery:"Complaint: technician no-show",complaint_termination:"Complaint: cancellation fees",complaint_contract:"Complaint: offer change not applied"};
+const QUEUE = {general:"General",technical:"Technical",complaint:"Complaints"};
+const MOODEN = {calm:"Calm",impatient:"Impatient",dissatisfied:"Dissatisfied",demanding:"Demanding",interested_in_offer:"Interested in an offer",likely_to_churn:"Likely to churn"};
+const MOODTXT = {calm:"Polite, explains clearly, accepts a reasonable solution.",impatient:"Short sentences, hates waiting or repeating. Hangs up after 4 messages without a solution.",
+  dissatisfied:"Unhappy with CallVerse, wants the problem acknowledged first.",demanding:"Wants exact amounts and delays, asks for a commercial gesture, insists.",
+  interested_in_offer:"Curious, asks about cheaper or better offers and prices.",likely_to_churn:"Seriously thinking of leaving, compares with competitors."};
+const CRIT = ["relevance","accuracy","compliance","empathy","resolution","satisfaction"];
+const CRITSRC = {relevance:"llm",accuracy:"llm",compliance:"code",empathy:"llm",resolution:"code",satisfaction:"llm"};
+const PRESETS = [
+  {t:"Customer wants to leave",s:"retention supervisor",reason:"cancel_contract",mood:"calm"},
+  {t:"Bill doubled",s:"complaint specialist",reason:"complaint_billing",mood:"demanding"},
+  {t:"Internet down",s:"advisor + RAG",reason:"internet_outage",mood:"impatient"},
+  {t:"Lost SIM card",s:"consent guard",reason:"lost_sim",mood:"calm"}];
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const eur = c => ((c||0)/100).toFixed(2).replace(".",",")+" €";
+const pct = v => v==null?"–":Math.round(v*100)+"%";
+const num = (v,d=2) => v==null?"–":Number(v).toFixed(d);
+const api = async p => { const r = await fetch(p); const j = await r.json(); if(!r.ok) throw new Error(j.error||r.status); return j; };
+const mmss = s => `${String(Math.floor(s/60)).padStart(2,"0")}:${String(Math.floor(s%60)).padStart(2,"0")}`;
+
+/* ---------------------------------------------------------------- views */
+document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>show(b.dataset.view));
+function show(v){
+  document.querySelectorAll(".nav button").forEach(b=>b.setAttribute("aria-selected",b.dataset.view===v));
+  document.querySelectorAll(".view").forEach(s=>s.hidden = s.id!=="view-"+v);
+  if(v==="history") loadHistory(); if(v==="results") loadResults(); if(v==="workforce") initWorkforce();
+}
+
+/* ---------------------------------------------------------------- status */
+let HEALTH = null;
+async function loadHealth(){
+  try{ HEALTH = await api("/api/health"); }catch(e){ HEALTH = {database:false,ollama:false,model_ready:false,model:"?"}; }
+  const set=(id,ok,txt,tip)=>{const el=$(id);el.className="pill "+(ok?"ok":"bad");el.innerHTML=`<i></i>${esc(txt)}`;el.title=tip||"";};
+  set("st-db",HEALTH.database,"Database",HEALTH.database_error);
+  set("st-ollama",HEALTH.ollama,"Ollama",HEALTH.ollama_error||HEALTH.ollama_url);
+  set("st-model",HEALTH.model_ready,HEALTH.model);
+  renderWarn();
+}
+function renderWarn(){
+  const w=[]; if(!HEALTH) return;
+  if(!HEALTH.database) w.push("PostgreSQL is not reachable: start the postgresql service (services.msc).");
+  if(!HEALTH.ollama) w.push(`Ollama is not reachable at ${esc(HEALTH.ollama_url||"")}: start the Ollama app.`);
+  else if(!HEALTH.model_ready) w.push(`Model ${esc(HEALTH.model)} is missing on this Ollama: run <span class="mono">ollama pull ${esc(HEALTH.model)}</span>, or set OLLAMA_BASE_URL in .env.`);
+  $("warn").innerHTML = w.length?`<div class="warnbox">${w.join("<br>")}</div>`:"";
+}
+
+/* ---------------------------------------------------------------- setup form */
+let OPTS = {reasons:[],personas:[],customers:[]}, CUSTOMER = null, MOOD = "calm";
+async function loadOptions(){
+  try{ OPTS = await api("/api/options"); }
+  catch(e){ $("custcard").innerHTML = `<span class="muted">Customers unavailable (${esc(e.message)}). Type an id below.</span>`; }
+  const sel=$("customer");
+  sel.innerHTML = OPTS.customers.map(c=>`<option value="${esc(c.id)}">${esc(c.id)} · risk ${c.churn_risk.toFixed(2)}${c.id===OPTS.demo_customer?" · demo":""}</option>`).join("")+`<option value="__other">Another customer…</option>`;
+  sel.onchange = ()=>{ const o = sel.value==="__other"; $("customerOther").hidden=!o; if(!o) pickCustomer(OPTS.customers.find(c=>c.id===sel.value)); };
+  $("customerOther").onchange = async e=>{ try{ pickCustomer(await api("/api/customer?id="+encodeURIComponent(e.target.value.trim()))); }catch(err){ $("custcard").innerHTML=`<span class="muted">${esc(err.message)}</span>`; } };
+  $("moods").innerHTML = Object.keys(MOODEN).map(m=>`<button class="mood" data-m="${m}" aria-pressed="${m===MOOD}">${MOODEN[m]}</button>`).join("");
+  $("moods").querySelectorAll(".mood").forEach(b=>b.onclick=()=>setMood(b.dataset.m));
+  $("presets").innerHTML = PRESETS.map((p,i)=>`<button class="preset" data-i="${i}"><b>${esc(p.t)}</b><span>shows the ${esc(p.s)}</span></button>`).join("");
+  $("presets").querySelectorAll(".preset").forEach(b=>b.onclick=()=>applyPreset(PRESETS[b.dataset.i]));
+  if(OPTS.customers.length) pickCustomer(OPTS.customers[0]); else buildReasons();
+  setMood(MOOD);
+}
+function pickCustomer(c){
+  CUSTOMER = c; if(!c) return;
+  const risk=c.churn_risk||0;
+  $("custcard").innerHTML = `
+    <div class="row"><span>Offers</span><span>${esc(c.offers)}</span></div>
+    <div class="row"><span>Monthly bill</span><span>${esc(c.bill)}</span></div>
+    <div class="row"><span>Contract</span><span>${esc(c.contract)}</span></div>
+    <div class="row"><span>Customer for</span><span>${esc(c.tenure)} months</span></div>
+    <div class="risk"><div class="row"><span>Churn risk (model)</span><span class="mono" style="color:${risk>=.7?"var(--bad)":"var(--ink)"}">${risk.toFixed(2)}</span></div>
+      <div class="meter"><div class="f" style="width:${Math.min(100,risk*100)}%"></div><div class="mark" title="supervisor threshold 0.70"></div></div>
+      <small>The line is the 0.70 threshold of the retention supervisor. The advisor never sees this score.</small></div>`;
+  buildReasons();
+}
+function has(need){ if(!CUSTOMER||!need) return true; const c=CUSTOMER.codes||[]; return need==="mobile"?c.includes("forfait_mobile"):c.some(x=>x.startsWith("box_")); }
+function buildReasons(keep){
+  const cur = keep || $("reason").value;
+  const groups = {};
+  (OPTS.reasons.length?OPTS.reasons:Object.keys(REASON).map(id=>({id,queue:id.startsWith("complaint")?"complaint":"general"}))).forEach(r=>(groups[r.queue]=groups[r.queue]||[]).push(r));
+  $("reason").innerHTML = Object.entries(groups).map(([q,rs])=>`<optgroup label="${esc(QUEUE[q]||q)} queue">${rs.map(r=>`<option value="${r.id}" ${has(r.needs)?"":"disabled"}>${esc(REASON[r.id]||r.id)}${has(r.needs)?"":" (no "+r.needs+")"}</option>`).join("")}</optgroup>`).join("");
+  if(cur && [...$("reason").options].some(o=>o.value===cur&&!o.disabled)) $("reason").value=cur;
+}
+function setMood(m){ MOOD=m; $("moods").querySelectorAll(".mood").forEach(b=>b.setAttribute("aria-pressed",b.dataset.m===m)); $("moodtxt").textContent=MOODTXT[m]; }
+function applyPreset(p){
+  const demo = OPTS.customers.find(c=>c.id===OPTS.demo_customer) || OPTS.customers[0];
+  if(demo){ $("customer").value=demo.id; $("customerOther").hidden=true; pickCustomer(demo); }
+  buildReasons(p.reason); $("reason").value=p.reason; setMood(p.mood);
+}
+
+/* ---------------------------------------------------------------- rendering a case (live or saved) */
+function newCase(){ return {messages:[],tools:[],intent:null,is_complaint:false,wants_to_leave:false,turn:0,complaint:null,retention:null,outcome:null,satisfaction:null,review:null,timeline:[],customer:null}; }
+function bubble(m, tools){
+  const c = m.role==="client";
+  return `<div class="msg ${c?"client":"advisor"}"><div class="av">${c?"CL":"AD"}</div><div><div class="who">${c?"Customer · LLM":"Advisor · LLM checked by code"}</div><div class="bub">${esc(m.content)}</div>${tools&&tools.length?`<div class="toolrow">${tools.map(t=>`<span class="tool">${esc(t)}</span>`).join("")}</div>`:""}</div></div>`;
+}
+function sysline(node, html){ return `<div class="sys"><span class="tag ${KIND[node]||"code"}">${esc(NODE[node]||node)}</span><span>${html}</span></div>`; }
+function caseHTML(c){
+  const out=[];
+  out.push(`<div class="kv">
+    <div><span>intent</span><b>${esc(c.intent||"–")}</b></div>
+    <div><span>turn</span><b>${c.turn||0}</b></div>
+    <div><span>is_complaint</span><b class="${c.is_complaint?"yes":""}">${c.is_complaint}</b></div>
+    <div><span>wants_to_leave</span><b class="${c.wants_to_leave?"yes":""}">${c.wants_to_leave}</b></div>
+    <div><span>outcome</span><b>${c.outcome?outcomeBadge(c.outcome):"in progress"}</b></div>
+    <div><span>satisfaction</span><b>${c.satisfaction?("★".repeat(c.satisfaction)+"☆".repeat(5-c.satisfaction)):"–"}</b></div></div>`);
+  if(c.tools.length){ const n={}; c.tools.forEach(t=>n[t.name]=(n[t.name]||0)+1);
+    out.push(`<div class="card"><div class="t"><b>Tools used by the advisor</b><span class="badge">${c.tools.length}</span></div><div class="toolrow" style="justify-content:flex-start">${Object.entries(n).map(([k,v])=>`<span class="tool">${esc(k)} ×${v}</span>`).join("")}</div></div>`); }
+  if(c.complaint){ const r=c.complaint;
+    out.push(`<div class="card"><div class="t"><b>Complaint specialist</b><span class="badge ${r.escalate?"warn":"good"}">${r.escalate?"escalated":"handled"}</span></div>
+      <div class="t"><span>${esc(r.category)} · severity <span class="sev">${[1,2,3,4].map(i=>`<i class="${i<=r.severity?"on":""}"></i>`).join("")}</span> ${r.severity}/4</span><span class="money">${eur(r.compensation_cents)}</span></div>
+      ${r.actions&&r.actions.length?`<ul>${r.actions.map(a=>`<li>${esc(a)}</li>`).join("")}</ul>`:""}
+      ${r.escalation_reasons&&r.escalation_reasons.length?`<span class="muted" style="font-size:.76rem">Why escalated (internal): ${esc(r.escalation_reasons.join("; "))}</span>`:""}
+      <span class="mono muted" style="font-size:.7rem">${r.ticket_id?"ticket "+esc(r.ticket_id):""}${r.rules_cited&&r.rules_cited.length?" · rules: "+esc(r.rules_cited.join(", ")):""}</span></div>`); }
+  if(c.retention){ const r=c.retention;
+    out.push(`<div class="card"><div class="t"><b>Retention supervisor</b><span class="badge ${r.high_risk?"bad":"good"}">${r.high_risk==null?"":r.high_risk?"high risk":"not high risk"}</span></div>
+      <span>${r.offer?`Offer: <b>${esc(r.offer)}</b>`:r.supervisor?"No offer in the grid: a manager calls back within 48 h.":"No offer: the advisor explains the cancellation conditions."}</span>
+      ${r.rules_cited&&r.rules_cited.length?`<span class="mono muted" style="font-size:.7rem">rules: ${esc(r.rules_cited.join(", "))}</span>`:""}</div>`); }
+  if(c.review){ const q=c.review;
+    out.push(`<div class="card review"><div class="t"><b>Reviewer</b><span class="label">click a grade for the reason</span></div>
+      <div class="overall"><span class="big">${num(q.overall,1)}</span><span class="muted">/ 5 overall</span></div>
+      ${CRIT.filter(k=>q.scores&&q.scores[k]).map(k=>{const s=q.scores[k];const col=s.score>=4?"var(--good)":s.score>=3?"var(--warn)":"var(--bad)";
+        return `<div class="crit" onclick="this.querySelector('p').hidden=!this.querySelector('p').hidden"><div class="r"><span>${k}<span class="src tag ${CRITSRC[k]}">${CRITSRC[k]==="llm"?(k==="satisfaction"?"customer":"LLM"):"code"}</span></span><div class="bar"><i style="width:${s.score*20}%;background:${col}"></i></div><b>${s.score}</b></div><p hidden>${esc(s.explanation)}</p></div>`;}).join("")}
+      ${q.recommendations&&q.recommendations.length?`<div class="label" style="margin-top:6px">Tips for the advisor</div><ul>${q.recommendations.map(t=>`<li>${esc(t)}</li>`).join("")}</ul>`:""}</div>`); }
+  if(c.timeline.length){ out.push(`<div class="card"><div class="t"><b>Timeline</b><span class="label">seconds</span></div><div class="timeline">${c.timeline.map(e=>`<div><span>${e.t.toFixed(1)}</span><span>${esc(e.label)}</span></div>`).join("")}</div></div>`); }
+  return out.join("");
+}
+function outcomeBadge(o){ const cls={resolved:"good",escalated:"warn",refused:"bad",abandoned:"bad"}[o]||""; return `<span class="badge ${cls}">${esc(o)}</span>`; }
+
+/* ---------------------------------------------------------------- the live call */
+let ES=null, LIVE=null, ACTIVE=null, T0=0, TICK=null;
+function mapReset(){ document.querySelectorAll(".n").forEach(n=>n.classList.remove("live","seen")); document.querySelectorAll(".e").forEach(e=>e.classList.remove("on")); }
+function mapActive(node){
+  const id = MAPNODE[node]||node;
+  document.querySelectorAll(".n").forEach(n=>{ if(n.classList.contains("live")) n.classList.add("seen"); n.classList.toggle("live",n.dataset.node===id); });
+  const from = ACTIVE; ACTIVE=id;
+  document.querySelectorAll(".e").forEach(e=>e.classList.remove("on"));
+  const edge = {"client>advisor":"e-ca","advisor>client":"e-ac","advisor>complaint":"e-ax","complaint>advisor":"e-xa","advisor>retention":"e-ar","retention>advisor":"e-ra","client>quality":"e-cq","complaint>quality":"e-cq","advisor>quality":"e-cq"}[from+">"+id];
+  if(edge) $(edge).classList.add("on");
+}
+function setNow(node){
+  $("nowbar").innerHTML = node?`<span class="dots"><i></i><i></i><i></i></span><b>${esc(NODE[node]||node)}</b><span class="muted">${esc(DOING[node]||"")}</span><span class="clock" id="clock">${mmss((Date.now()-T0)/1000)}</span>`
+    :`<span class="muted">${esc(LIVE&&LIVE.outcome?"Call finished.":"Ready.")}</span><span class="clock" id="clock">${T0?mmss((Date.now()-T0)/1000):"00:00"}</span>`;
+}
+function typing(node){
+  const old=$("typing"); if(old) old.remove();
+  if(node==="client"||node==="advisor"){ $("chat").insertAdjacentHTML("beforeend",`<div class="typing ${node}" id="typing"><span class="dots"><i></i><i></i><i></i></span>${node==="client"?"The customer is typing":"The advisor is preparing an answer"}</div>`); scrollChat(); }
+}
+function scrollChat(){ const c=$("chat"); c.scrollTop=c.scrollHeight; }
+function placeCall(){
+  const customer = $("customer").value==="__other"?$("customerOther").value.trim():$("customer").value;
+  const reason=$("reason").value;
+  if(!customer||!reason){ $("warn").innerHTML=`<div class="warnbox">Choose a customer and a reason.</div>`; return; }
+  if(ES) ES.close();
+  LIVE=newCase(); ACTIVE=null; mapReset(); T0=Date.now();
+  $("chat").innerHTML=""; $("case").innerHTML=caseHTML(LIVE); $("callid").textContent="connecting…";
+  $("go").disabled=true; $("go").textContent="Call in progress…"; $("stop").hidden=false;
+  clearInterval(TICK); TICK=setInterval(()=>{const c=$("clock"); if(c) c.textContent=mmss((Date.now()-T0)/1000);},500);
+  ES = new EventSource(`/api/call?customer=${encodeURIComponent(customer)}&reason=${encodeURIComponent(reason)}&persona=${MOOD}&save=${$("save").checked?1:0}`);
+  ES.onmessage = ev => onEvent(JSON.parse(ev.data));
+  ES.onerror = () => { if(ES){ ES.close(); ES=null; if(!LIVE.outcome) finish(`Connection to the studio server lost.`); } };
+}
+function onEvent(e){
+  if(e.type==="call"){
+    $("callid").textContent=e.call_id;
+    $("chat").insertAdjacentHTML("beforeend",sysline("client",`New call · <b>${esc(e.customer?e.customer.id:"")}</b> · ${esc(REASON[e.reason]||e.reason)} · mood <b>${esc(MOODEN[e.persona]||e.persona)}</b>`));
+  } else if(e.type==="start"){
+    mapActive(e.node); setNow(e.node); typing(e.node);
+    LIVE.timeline.push({t:e.t,label:`${NODE[e.node]||e.node} starts`});
+    $("case").innerHTML=caseHTML(LIVE);
+  } else if(e.type==="update"){
+    applyUpdate(e.node,e.data,e.t);
+  } else if(e.type==="done"){
+    const s=e.state; LIVE.outcome=s.outcome; LIVE.satisfaction=s.satisfaction;
+    if(s.quality_report) LIVE.review=s.quality_report;
+    LIVE.timeline.push({t:e.t,label:`Call finished: ${s.outcome}${e.saved?" · saved to batch studio":""}`});
+    finish();
+  } else if(e.type==="error"){
+    finish(e.message);
+  }
+}
+function applyUpdate(node,d,t){
+  const typingEl=$("typing"); if(typingEl) typingEl.remove();
+  const chat=$("chat");
+  const newTools=(d.tools_used||[]).map(x=>x.name);
+  if(d.tools_used) LIVE.tools.push(...d.tools_used);
+  const before={intent:LIVE.intent,comp:LIVE.is_complaint,leave:LIVE.wants_to_leave};
+  ["intent","is_complaint","wants_to_leave","turn","outcome","satisfaction"].forEach(k=>{ if(k in d) LIVE[k]=d[k]; });
+  if(node==="advisor" && (LIVE.intent!==before.intent || LIVE.is_complaint!==before.comp || LIVE.wants_to_leave!==before.leave)){
+    const route = d.is_complaint&&!before.comp?" → <b>routed to the complaint specialist</b>":d.wants_to_leave&&!before.leave?" → <b>routed to the retention supervisor</b>":"";
+    chat.insertAdjacentHTML("beforeend",sysline("advisor",`understood: intent <b>${esc(LIVE.intent)}</b> · complaint ${LIVE.is_complaint} · leaving ${LIVE.wants_to_leave}${route}`));
+  }
+  if(d.complaint_result){ const r=d.complaint_result; LIVE.complaint=r;
+    if(node==="complaint") chat.insertAdjacentHTML("beforeend",sysline("complaint",`<b>${esc(r.category)}</b> · severity ${r.severity}/4 · compensation <b>${eur(r.compensation_cents)}</b> (capped by the grid) · ${r.escalate?"<b>escalated to a manager</b>":"no escalation"}${r.ticket_id?" · ticket "+esc(r.ticket_id):""}`)); }
+  if(node==="complaint_follow_up") chat.insertAdjacentHTML("beforeend",sysline("complaint_follow_up","ticket updated with the customer's answer"));
+  if(d.retention){ const r=d.retention; LIVE.retention=r;
+    chat.insertAdjacentHTML("beforeend",sysline("retention",r.high_risk?`churn risk ≥ 0.70 → ${r.offer?`offer: <b>${esc(r.offer)}</b>`:"<b>a manager calls back</b> (no offer for mobile only)"}`:"churn risk below 0.70 → <b>no offer</b>, explain the cancellation conditions")); }
+  (d.messages||[]).forEach(m=>{ chat.insertAdjacentHTML("beforeend",bubble(m, m.role==="advisor"?[...new Set(newTools)]:null)); LIVE.messages.push(m); });
+  if(d.quality_report){ LIVE.review=d.quality_report; chat.insertAdjacentHTML("beforeend",sysline("quality",`overall <b>${num(d.quality_report.overall,1)} / 5</b> · see the case file for each grade and its reason`)); }
+  if(d.outcome && node==="client"){ chat.insertAdjacentHTML("beforeend",sysline("client",`the customer ends the call: ${outcomeBadge(d.outcome)} · satisfaction <b>${d.satisfaction??"–"}/5</b>`)); }
+  if(node==="end_call" && d.outcome) chat.insertAdjacentHTML("beforeend",sysline("end_call",`turn limit reached: ${outcomeBadge(d.outcome)}`));
+  LIVE.timeline.push({t,label:`${NODE[node]||node} done${Object.keys(d).length?" · "+Object.keys(d).join(", "):""}`});
+  $("case").innerHTML=caseHTML(LIVE); scrollChat();
+}
+function finish(error){
+  if(ES){ES.close();ES=null;}
+  clearInterval(TICK); const typingEl=$("typing"); if(typingEl) typingEl.remove();
+  document.querySelectorAll(".n").forEach(n=>{ if(n.classList.contains("live")) n.classList.replace("live","seen"); });
+  document.querySelectorAll(".e").forEach(e=>e.classList.remove("on"));
+  if(error) $("chat").insertAdjacentHTML("beforeend",`<div class="warnbox">The call stopped: ${esc(error)}</div>`);
+  setNow(null); $("go").disabled=false; $("go").textContent="Place another call"; $("stop").hidden=true;
+  $("case").innerHTML=caseHTML(LIVE); scrollChat(); loadHealth();
+}
+$("go").onclick=placeCall;
+$("stop").onclick=()=>finish("stopped by you (the server finishes the call in the background).");
+
+/* ---------------------------------------------------------------- agents view */
+const AGENTS = [
+ {id:"client",name:"Customer",kind:"llm",tag:"LLM",file:"callverse/agents/client/",role:"Plays a real customer so the center can be tested without people.",
+  how:["Gets a reason (16, in 3 queues) and a mood (6), plus its real account from PostgreSQL.","Every turn: continue, accept, refuse or hang up, and a satisfaction from 1 to 5.","Patience is enforced by code: an impatient customer hangs up after 4 messages without a solution."],
+  say:"Changing the mood stress-tests the advisor the way difficult real customers do.",preset:{reason:"lost_sim",mood:"impatient"}},
+ {id:"advisor",name:"Advisor",kind:"mixed",tag:"LLM + code",file:"callverse/agents/advisor/agent.py",role:"The employee: understands the request and answers from the company's rules.",
+  how:["understand(): the LLM fills intent, is_complaint, wants_to_leave.","Answers with RAG on 7 policy files and tools on the database: get_customer, search_policies, get_complaint_history.","Guards check every answer: no invented compensation, consent before acting, the escalation sentence, the supervisor's offer word for word, never the churn score."],
+  say:"An 8B model makes mistakes, so the model drafts and the code checks.",preset:{reason:"internet_outage",mood:"impatient"}},
+ {id:"complaint",name:"Complaint specialist",kind:"mixed",tag:"LLM + code",file:"callverse/agents/complaint/steps.py · rules.py",role:"Handles complaints and decides the money.",
+  how:["classify → check_history → search_rules → draft_fix → check_fix → decide → open_ticket.","Compensation capped by severity: 0 / 5 / 10 / 20 € (compensation_grid.md); no outage credit under 48 h.","Escalation by rules; a real ticket is opened, then updated after the call."],
+  say:"Money must be predictable and auditable: the LLM explains, the rules decide.",preset:{reason:"complaint_billing",mood:"demanding"}},
+ {id:"retention",name:"Retention supervisor",kind:"code",tag:"code",file:"callverse/agents/retention/agent.py",role:"Steps in when a customer wants to leave.",
+  how:["Reads the churn risk from the model (logistic regression, AUC 0.853).","Below 0.70: no offer, honest cancellation conditions.","From 0.70: ADSL → free Fibre upgrade; other box → 3 months free on an option; mobile only → a manager calls back."],
+  say:"Offers only where the model sees a real risk; about 20 lines anyone can audit.",preset:{reason:"cancel_contract",mood:"calm"}},
+ {id:"quality",name:"Reviewer",kind:"mixed",tag:"LLM + code",file:"callverse/agents/quality/agent.py · checks.py",role:"Grades every finished call on 6 criteria.",
+  how:["LLM: relevance, accuracy, empathy. A low accuracy grade must quote the wrong sentence and its source, or it's raised back to 4.","Code: compliance (amounts, procedures) and resolution. Satisfaction comes from the customer.","Measured against a second grader (Results tab)."],
+  say:"I don't trust the judge blindly: I measured it and found it too generous.",preset:{reason:"check_invoice",mood:"dissatisfied"}},
+ {id:"workforce",name:"Workforce manager",kind:"code",tag:"RL",file:"workforce/ (simulation, env, train, twin)",role:"Decides every 15 minutes how many advisors work on each queue.",
+  how:["SimPy floor (3 queues, 25 advisors, customers who hang up) calibrated on 444,448 real calls (Technion).","PPO agent compared with Erlang C and two rules on 8 scenarios × 30 days.","twin.py: the AI calls' first-call resolution creates callbacks that change the plan."],
+  say:"The twin closes the loop: how well agents handle calls changes how many people the center needs.",preset:null}
+];
+$("agents").innerHTML = AGENTS.map(a=>`<div class="panel agent"><div class="t"><h3>${esc(a.name)}</h3><span class="tag ${a.kind}" style="font-family:var(--mono);font-size:.64rem;padding:2px 8px;border-radius:5px">${esc(a.tag)}</span></div>
+  <p>${esc(a.role)}</p><ul>${a.how.map(h=>`<li>${esc(h)}</li>`).join("")}</ul><p class="say">${esc(a.say)}</p><span class="file">${esc(a.file)}</span>
+  ${a.preset?`<button class="ghost try" data-id="${a.id}">Try it live →</button>`:`<button class="ghost try" data-results="1">Open the workforce floor →</button>`}</div>`).join("");
+$("agents").querySelectorAll(".try").forEach(b=>b.onclick=()=>{ if(b.dataset.results){show("workforce");return;} const a=AGENTS.find(x=>x.id===b.dataset.id); applyPreset(a.preset); show("floor"); });
+
+/* ---------------------------------------------------------------- history */
+let HROWS=[], HSEL=null;
+async function loadHistory(){
+  try{
+    const st = await api("/api/stats");
+    const runs = st.runs||[]; const sel=$("histRun"); const cur=sel.value;
+    sel.innerHTML = `<option value="">All batches</option>`+runs.map(r=>`<option ${r===cur?"selected":""}>${esc(r)}</option>`).join("");
+    sel.onchange=loadHistoryList; loadHistoryList();
+  }catch(e){ $("histList").innerHTML=`<div class="bd muted">Database unavailable: ${esc(e.message)}</div>`; }
+}
+async function loadHistoryList(){
+  HROWS = await api("/api/calls"+($("histRun").value?"?run="+encodeURIComponent($("histRun").value):""));
+  $("histCount").textContent=`${HROWS.length} calls`;
+  $("histList").innerHTML = HROWS.length?HROWS.map(r=>`<div class="item" data-id="${esc(r.call_id)}"><b>${esc(REASON[r.call_reason]||r.call_reason)}</b>${outcomeBadge(r.outcome)}<small>${esc(r.call_id)} · ${esc(MOODEN[r.persona]||r.persona)} · ${esc(r.customer_id)}</small><small class="mono">${r.overall?num(r.overall,1)+"/5":"–"} · ${r.satisfaction??"–"}★</small></div>`).join(""):`<div class="bd muted">No saved calls yet.</div>`;
+  $("histList").querySelectorAll(".item").forEach(i=>i.onclick=()=>openCall(i.dataset.id));
+}
+function rowToCase(r){
+  const c=newCase();
+  Object.assign(c,{messages:r.messages||[],tools:r.tools_used||[],intent:r.intent,is_complaint:r.is_complaint,wants_to_leave:!!r.wants_to_leave,turn:r.turns,outcome:r.outcome,satisfaction:r.satisfaction});
+  if(r.complaint_category) c.complaint={category:r.complaint_category,severity:r.complaint_severity,compensation_cents:r.compensation_cents,escalate:r.escalated,ticket_id:r.ticket_id};
+  if(r.wants_to_leave) c.retention={high_risk:r.retention_supervisor,offer:r.retention_offer,supervisor:r.retention_supervisor};
+  if(r.overall!=null) c.review={overall:r.overall,scores:r.scores||{},recommendations:r.recommendations||[]};
+  return c;
+}
+let REPLAY=null;
+async function openCall(id){
+  document.querySelectorAll(".item").forEach(i=>i.classList.toggle("sel",i.dataset.id===id));
+  const r = await api("/api/calls/"+encodeURIComponent(id)); HSEL=rowToCase(r);
+  $("hId").textContent=`${r.call_id} · ${r.seconds||"?"} s`;
+  $("hChat").innerHTML = sysline("client",`${esc(r.customer_id)} · ${esc(REASON[r.call_reason]||r.call_reason)} · mood <b>${esc(MOODEN[r.persona]||r.persona)}</b>`)+HSEL.messages.map(m=>bubble(m)).join("")+(r.outcome?sysline("client",`ended: ${outcomeBadge(r.outcome)} · satisfaction <b>${r.satisfaction??"–"}/5</b>`):"");
+  $("hCase").innerHTML=caseHTML(HSEL); $("hReplay").hidden=false;
+}
+$("hReplay").onclick=()=>{
+  if(!HSEL) return; clearInterval(REPLAY); const msgs=HSEL.messages; let i=0; const chat=$("hChat");
+  chat.innerHTML=""; REPLAY=setInterval(()=>{ if(i>=msgs.length){clearInterval(REPLAY);return;} chat.insertAdjacentHTML("beforeend",bubble(msgs[i++])); chat.scrollTop=chat.scrollHeight; },1600);
+};
+
+/* ---------------------------------------------------------------- results */
+async function loadResults(){
+  let st;
+  try{ st = await api("/api/stats"+($("resRun").value?"?run="+encodeURIComponent($("resRun").value):"")); }
+  catch(e){ $("kpis").innerHTML=`<div class="panel kpi"><span>Database unavailable: ${esc(e.message)}</span></div>`; renderStatic(); return; }
+  const sel=$("resRun"), cur=sel.value;
+  sel.innerHTML=`<option value="">All batches</option>`+st.runs.map(r=>`<option ${r===cur?"selected":""}>${esc(r)}</option>`).join("");
+  sel.onchange=loadResults;
+  const s=st.summary;
+  const k=[["Calls",s.calls,""],["Resolved",pct(s.resolved_rate),"customer accepted"],["Satisfaction",num(s.avg_satisfaction),"out of 5"],["Quality",num(s.avg_quality),"reviewer, out of 5"],["Complaints",pct(s.complaint_rate),`${pct(s.escalation_rate)} escalated`],["Wanted to leave",s.wanted_to_leave,`${pct(s.kept_rate)} handled`]];
+  $("kpis").innerHTML=k.map(([a,b,c])=>`<div class="panel kpi"><span>${a}</span><b>${b??"–"}</b><em class="muted">${c}</em></div>`).join("");
+  $("criteria").innerHTML=`<div class="review">${CRIT.map(c=>{const v=s.criteria[c];const col=v>=4?"var(--good)":v>=3?"var(--warn)":"var(--bad)";return `<div class="crit"><div class="r"><span>${c}</span><div class="bar"><i style="width:${(v||0)*20}%;background:${col}"></i></div><b>${num(v,1)}</b></div></div>`;}).join("")}</div>`;
+  $("moodsTable").innerHTML=`<table><thead><tr><th>Mood</th><th class="n">Calls</th><th class="n">Resolved</th><th class="n">Satisfaction</th><th class="n">Quality</th></tr></thead><tbody>${Object.entries(st.by_persona).map(([m,v])=>`<tr><td>${esc(MOODEN[m]||m)}</td><td class="n">${v.calls}</td><td class="n">${pct(v.resolved_rate)}</td><td class="n">${num(v.avg_satisfaction)}</td><td class="n">${num(v.avg_quality)}</td></tr>`).join("")}</tbody></table>`;
+  $("tips").innerHTML=st.tips.length?`<ol class="tips">${st.tips.map(([t,n])=>`<li>${esc(t)} <span class="muted mono">×${n}</span></li>`).join("")}</ol>`:`<p class="muted">No tips yet.</p>`;
+  renderStatic();
+}
+async function renderStatic(){
+  let wf={}; try{ wf=await api("/api/workforce"); }catch(e){}
+  const tw=wf.twin;
+  const twinHTML = tw?`<p style="margin-bottom:10px">Measured on <b>${tw.measured.calls}</b> AI calls: <b>${pct(tw.measured.fcr)}</b> resolved at the first contact. With ${pct(tw.callback_share)} of unresolved customers calling back, the floor gets <b>${(tw.load.volume_factor-1>=0?"+":"")+Math.round((tw.load.volume_factor-1)*100)}%</b> calls.</p>
+    <div class="tw"><table><thead><tr><th>Situation</th><th class="n">Calls/day</th><th class="n">SLA</th><th class="n">Hang-ups</th><th class="n">Total €/day</th></tr></thead><tbody>${Object.entries(tw.results).map(([n,r])=>`<tr><td>${esc(n)}</td><td class="n">${r.calls}</td><td class="n">${(r.sla*100).toFixed(1)}%</td><td class="n">${(r.abandonment_rate*100).toFixed(1)}%</td><td class="n">${Number(r.total_cost_eur).toLocaleString("fr-FR")}</td></tr>`).join("")}</tbody></table></div>`
+    :`<p class="muted">Not computed on this computer yet. Run <span class="mono">python -m workforce.twin --run night-2</span>.</p>`;
+  $("twin").innerHTML=twinHTML; $("twin2").innerHTML=twinHTML;
+  const cmp=wf.comparison;
+  if(cmp){ const pols=["Erlang C plan","Reactive rule","Margin rule","RL agent (PPO)"];
+    $("wfm").innerHTML=`<table><thead><tr><th>Scenario</th>${pols.map(p=>`<th class="n">${esc(p)}</th>`).join("")}</tr></thead><tbody>${Object.entries(cmp).map(([sc,v])=>{const costs=pols.map(p=>v[p]?v[p].total_cost_eur:null);const best=Math.min(...costs.filter(x=>x!=null));
+      return `<tr><td>${esc(sc.replace(/_/g," "))}</td>${pols.map((p,i)=>v[p]?`<td class="n" style="${costs[i]===best?"color:var(--good);font-weight:700":""}">${Math.round(costs[i]).toLocaleString("fr-FR")} €<br><span class="muted" style="font-size:.72rem">SLA ${(v[p].sla*100).toFixed(0)}%</span></td>`:"<td>–</td>").join("")}</tr>`;}).join("")}</tbody></table><p class="muted" style="margin-top:8px;font-size:.78rem">Total cost per day (staff + service penalties), lowest in green.</p>`; }
+  else $("wfm").innerHTML=`<p class="muted">Not computed on this computer yet. Run <span class="mono">python -m workforce.compare</span>.</p>`;
+  $("wfm2").innerHTML=$("wfm").innerHTML;
+  $("judge").innerHTML=`<table><thead><tr><th>Criterion</th><th class="n">Within 1 pt</th><th class="n">Reviewer higher by</th><th class="n">Kappa</th></tr></thead><tbody>
+    <tr><td>relevance</td><td class="n">20%</td><td class="n">+1.80</td><td class="n" style="color:var(--bad)">0.07</td></tr>
+    <tr><td>accuracy</td><td class="n">50%</td><td class="n">+1.00</td><td class="n" style="color:var(--warn)">0.42</td></tr>
+    <tr><td>compliance</td><td class="n">30%</td><td class="n">+1.70</td><td class="n" style="color:var(--bad)">0.01</td></tr>
+    <tr><td>empathy</td><td class="n">60%</td><td class="n">+1.30</td><td class="n" style="color:var(--bad)">0.09</td></tr></tbody></table>
+    <p class="muted" style="margin-top:10px;font-size:.82rem">Second grader: Claude, a separate AI (not a human), on 10 calls of night-2. The 8B reviewer is too generous, so its grades are used to compare batches, not as absolute quality. Decisions that matter are made by code rules.</p>`;
+}
+
+
+/* ---------------------------------------------------------------- workforce */
+const PCOL = {"Erlang C plan":"#8B97B5","Reactive rule":"#FFB547","Margin rule":"#3DD6B5","RL agent (PPO)":"#9D9BFF"};
+const QN = {general:"General",technical:"Technical",complaint:"Complaints"};
+const HELD = ["late_outage","big_outage","complaint_storm","quiet_day"];
+let WF=null, WFSC="network_outage", WFI=0, WFPLAY=null, WFINIT=false;
+function initWorkforce(){
+  if(WFINIT) return; WFINIT=true; renderStatic();
+  const list=["normal","network_outage","billing_day","afternoon_promo","late_outage","big_outage","complaint_storm","quiet_day"];
+  $("scen").innerHTML=list.map(s=>`<button data-s="${s}" class="${HELD.includes(s)?"held":""}" aria-pressed="${s===WFSC}">${s.replace(/_/g," ")}</button>`).join("");
+  $("scen").querySelectorAll("button").forEach(b=>b.onclick=()=>{WFSC=b.dataset.s;$("scen").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",x===b));runDay();});
+  $("wfGo").onclick=runDay; $("wfSlider").oninput=e=>{stopPlay();WFI=+e.target.value;drawFloor();};
+  $("wfPolicy").onchange=drawFloor; $("wfPlay").onclick=()=>{ if(WFPLAY){stopPlay();return;} if(WFI>=51) WFI=0; $("wfPlay").textContent="❚❚ Pause";
+    WFPLAY=setInterval(()=>{ if(WFI>=51){stopPlay();return;} WFI++; $("wfSlider").value=WFI; drawFloor(); },420); };
+  runDay();
+}
+function stopPlay(){ clearInterval(WFPLAY); WFPLAY=null; $("wfPlay").textContent="▶ Play the day"; }
+async function runDay(){
+  stopPlay(); $("wfGo").disabled=true; $("wfNote").textContent="simulating…";
+  try{ WF=await api(`/api/workforce/day?scenario=${WFSC}&day=${parseInt($("wfDay").value)||10000}`); }
+  catch(e){ $("wfNote").textContent=""; $("wfCmp").innerHTML=`<div class="warnbox">The simulation failed: ${esc(e.message)}</div>`; $("wfGo").disabled=false; return; }
+  $("wfGo").disabled=false;
+  const sc=WF.scenarios.find(s=>s.id===WFSC); $("scenTxt").textContent=sc?sc.text:"";
+  $("wfNote").textContent=WF.rl.available?`RL agent loaded (${WF.rl.why})`:`RL agent not loaded here: ${WF.rl.why}`;
+  $("wfTitle").textContent=`${WFSC.replace(/_/g," ")} · day ${WF.day}`;
+  const names=Object.keys(WF.policies);
+  const best=k=>k==="sla"?Math.max(...names.map(n=>WF.policies[n].kpis[k])):Math.min(...names.map(n=>WF.policies[n].kpis[k]));
+  const cols=[["total_cost_eur","Total cost / day",v=>Math.round(v).toLocaleString("fr-FR")+" €"],["staff_cost_eur","Staff",v=>Math.round(v).toLocaleString("fr-FR")+" €"],["sla","Answered < 20 s",v=>(v*100).toFixed(1)+"%"],["abandonment_rate","Hung up",v=>(v*100).toFixed(1)+"%"],["avg_wait_s","Avg wait",v=>v.toFixed(0)+" s"]];
+  $("wfCmp").innerHTML=`<table class="cmp"><thead><tr><th>Floor manager</th>${cols.map(c=>`<th class="n">${c[1]}</th>`).join("")}</tr></thead><tbody>${names.map(n=>{const k=WF.policies[n].kpis;return `<tr><td><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${PCOL[n]};margin-right:8px"></span>${esc(n)}</td>${cols.map(([key,,f])=>`<td class="n ${k[key]===best(key)?"best":""}">${f(k[key])}</td>`).join("")}</tr>`;}).join("")}</tbody></table>
+    <p class="muted" style="margin-top:8px;font-size:.78rem">${WF.policies[names[0]].kpis.calls} calls on this day. Total cost = staff + 50 € per hang-up + 8 € per late answer (the RL reward). Best value in green. One day is an example; the table below averages 30 test days per scenario.</p>`;
+  const sel=$("wfPolicy"), keep=sel.value; sel.innerHTML=names.map(n=>`<option>${esc(n)}</option>`).join("");
+  sel.value=names.includes(keep)?keep:names[names.length-1];
+  $("wfLegend").innerHTML=names.map(n=>`<span><i style="background:${PCOL[n]}"></i>${esc(n)}</span>`).join("")+`<span><i style="background:var(--bad);opacity:.5"></i>calls ÷ forecast</span>`;
+  WFI=Math.min(WFI,51); drawCharts(); drawFloor();
+}
+function hhmm(min){ const t=WF.open_hour*60+min; return `${String(Math.floor(t/60)).padStart(2,"0")}:${String(t%60).padStart(2,"0")}`; }
+function drawFloor(){
+  if(!WF) return; const p=WF.policies[$("wfPolicy").value]; if(!p) return;
+  const s=p.timeline[Math.min(WFI,p.timeline.length-1)];
+  $("wfClock").textContent=hhmm(s.minute);
+  $("wfStatus").innerHTML=`last 15 min: <b>${(s.sla*100).toFixed(0)}%</b> answered within 20 s · <b>${s.abandoned}</b> hung up${s.priority?" · <b style='color:var(--accent)'>priority on</b>":""}`;
+  $("lanes").innerHTML=WF.queues.map(q=>{
+    const n=s.staffed[q], plan=s.plan[q], w=s.waiting[q], c=s.calls[q], e=s.expected[q];
+    const people=Array.from({length:Math.max(n,plan)},(_,i)=>`<span class="person ${i>=plan?"extra":i>=n?"cut":""}"></span>`).join("");
+    const ratio=e?c/e:0;
+    return `<div class="lane"><div><h4>${QN[q]}</h4><small>${n} on duty · plan ${plan}</small><small style="color:${ratio>1.3?"var(--bad)":"var(--muted)"}">${c} calls vs ${e} forecast</small></div>
+      <div class="people">${people}</div>
+      <div class="queue">${Array.from({length:Math.min(w,40)},()=>"<i></i>").join("")}<span>${w?w+" waiting":"no one waiting"}</span></div></div>`;
+  }).join("");
+  document.querySelectorAll(".cursor").forEach(l=>{const x=+l.dataset.x0+WFI*+l.dataset.dx; l.setAttribute("x1",x); l.setAttribute("x2",x);});
+}
+function drawCharts(){
+  const names=Object.keys(WF.policies), W=600, H=120, S=26, L=34, R=10, T=8, n=52, dx=(W-L-R)/n;
+  $("wfCharts").innerHTML=WF.queues.map(q=>{
+    const all=names.flatMap(nm=>WF.policies[nm].timeline.map(t=>t.staffed[q]));
+    const maxY=Math.max(2,...all)+1, y=v=>T+H-(v/maxY)*H;
+    const ticks=[0,Math.round(maxY/2),maxY-1];
+    const lines=names.map(nm=>{const tl=WF.policies[nm].timeline;let d="";tl.forEach((t,i)=>{const x0=L+i*dx,x1=x0+dx,yy=y(t.staffed[q]);d+=(i?`L${x0},${yy}`:`M${x0},${yy}`)+`L${x1},${yy}`;});
+      return `<path d="${d}" fill="none" stroke="${PCOL[nm]}" stroke-width="${nm.startsWith("RL")?2.6:1.6}" opacity=".95"/>`;}).join("");
+    const tl0=WF.policies[names[0]].timeline;
+    const bars=tl0.map((t,i)=>{const r=t.expected[q]?Math.min(3,t.calls[q]/t.expected[q]):0;const h=(r/3)*S;return `<rect x="${L+i*dx+1}" y="${T+H+8+S-h}" width="${dx-2}" height="${h}" fill="var(--bad)" opacity="${r>1.3?.75:.3}"/>`;}).join("");
+    const one=T+H+8+S-(1/3)*S;
+    const hours=[0,2,4,6,8,10,12].map(h=>`<text class="ax" x="${L+h*4*dx}" y="${T+H+8+S+14}" text-anchor="middle">${WF.open_hour+h}h</text>`).join("");
+    return `<div><div class="label" style="margin-bottom:4px">${QN[q]} queue</div><svg viewBox="0 0 ${W} ${T+H+8+S+20}">
+      <g class="grid">${ticks.map(v=>`<line x1="${L}" x2="${W-R}" y1="${y(v)}" y2="${y(v)}"/>`).join("")}</g>
+      ${ticks.map(v=>`<text class="ax" x="${L-6}" y="${y(v)+3}" text-anchor="end">${v}</text>`).join("")}
+      ${lines}${bars}<line x1="${L}" x2="${W-R}" y1="${one}" y2="${one}" stroke="var(--muted)" stroke-dasharray="3 3"/>
+      <text class="ax" x="${W-R}" y="${one-3}" text-anchor="end">forecast</text>${hours}
+      <line class="cursor" data-x0="${L+dx/2}" data-dx="${dx}" x1="0" x2="0" y1="${T}" y2="${T+H+8+S}" stroke="var(--accent)" stroke-width="1.5"/></svg></div>`;
+  }).join("");
+}
+document.querySelectorAll(".wfnode").forEach(n=>{n.onclick=()=>show("workforce");n.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();show("workforce");}};});
+/* ---------------------------------------------------------------- start */
+loadHealth(); loadOptions(); setInterval(loadHealth,30000);
+</script>
+</body>
+</html>

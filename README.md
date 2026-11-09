@@ -193,6 +193,25 @@ streamlit run dashboard/app.py                          # or: python scripts/bui
 
 See `dashboard/README.md`.
 
+### 7b. CallVerse Studio (the virtual call center in the browser)
+
+With Ollama running and the database filled:
+
+```bash
+python studio/server.py        # opens http://127.0.0.1:8600
+```
+
+- **Live floor**: choose a customer, a reason and a mood, then place the call. Each agent lights up while it works,
+  the conversation appears line by line, and the case file (`CallState`) fills in: what the advisor understood, the
+  complaint specialist's decision, the supervisor's offer, the outcome and the review with its reasons.
+- **Agents**: what each agent does, how it decides (LLM or code rules), and a button to try it live.
+- **Call history**: replay any saved call. Calls placed in the studio are saved in the batch `studio`.
+- **Workforce**: simulate one day of the floor (8 scenarios) with Erlang C, the two rules and the RL agent on the
+  same calls: costs, service level, and the floor replayed every 15 minutes (advisors on duty, customers waiting).
+- **Results**: the KPIs of a batch, the workforce comparison and the digital-twin report.
+
+It uses only the Python standard library for the web server: nothing new to install.
+
 ### 8. Close the loop (phase 3)
 
 After a batch of calls, see what the conversations change for the staffing:
