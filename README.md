@@ -1,65 +1,97 @@
 # CallVerse
 
-CallVerse is a pretend call center that lives inside a computer.
+[![tests](https://github.com/nourjihenelabed/callverse/actions/workflows/tests.yml/badge.svg)](https://github.com/nourjihenelabed/callverse/actions/workflows/tests.yml)
 
-Every worker in it is a computer program. Pretend customers call in, the programs answer them, and we watch how well the call center does. Then we try to make it better.
+CallVerse is a **digital twin of a telecom call center**. AI customers call AI advisors about real customer
+accounts; specialised agents handle complaints and customers who want to leave; every call is graded; and a
+reinforcement-learning floor manager decides how many advisors to staff. The **digital twin** connects the two:
+the quality of the AI calls becomes workload for the floor, so a better advisor agent has a price in euros.
 
-This is a school project built by a team of 7 people.
+It is a school project. Everything runs on a laptop: llama3.1 8B on Ollama, PostgreSQL, Chroma, LangGraph, SimPy.
 
-## The workers
+## How it fits together
 
-| Worker | What it does |
-|---|---|
-| Pretend customer | Plays the person who calls. Some are calm, some are in a hurry, some are angry, some want to leave. |
-| Advisor | Picks up the phone and answers everyday questions. It is the only worker the customer talks to. |
-| Complaint specialist | Helps the advisor when a customer is unhappy. It finds out what went wrong and suggests a fair fix that follows the company rules. Very serious cases go to a real boss. |
-| Reviewer | Listens to each call afterwards and gives it a grade, with tips to do better. |
-| Floor manager | Watches how long people wait and moves workers around. It gets better by practicing many pretend days. |
+```mermaid
+flowchart LR
+    subgraph call["One call (LangGraph, one shared CallState)"]
+        C[Customer<br/>LLM: reason, mood, account] <--> A[Advisor<br/>LLM + RAG + tools + code guards]
+        A -- complaint --> X[Complaint specialist<br/>rules cap the compensation]
+        X --> A
+        A -- wants to leave --> R[Retention supervisor<br/>churn risk >= 0.70]
+        R --> A
+        C -- call ends --> Q[Reviewer<br/>6 grades]
+    end
+    Q --> DB[(Saved calls<br/>PostgreSQL)]
+    DB -- after a batch:<br/>first-contact resolution --> T[Digital twin<br/>unresolved calls come back]
+    T -- workload --> W[Workforce manager<br/>RL every 15 min, SimPy floor]
+```
 
-All the workers read from the same shared folder: the company rules, common questions, and each customer's past problems.
+| Agent | Decides with | Code |
+|---|---|---|
+| Customer | LLM, with a call reason, a mood and its real account (IBM Telco, 7,043 customers) | `callverse/agents/client/` |
+| Advisor | LLM + rules search (RAG) + database tools; every answer is checked by code guards | `callverse/agents/advisor/` |
+| Complaint specialist | LLM classifies and drafts; code rules cap the compensation and decide the escalation | `callverse/agents/complaint/` |
+| Retention supervisor | Code only, from the churn model (logistic regression, AUC 0.853) | `callverse/agents/retention/` |
+| Reviewer | LLM for relevance, accuracy, empathy; code for compliance and resolution | `callverse/agents/quality/` |
+| Digital twin | Measures first-contact resolution and turns repeat calls into workload | `workforce/twin.py` |
+| Workforce manager | PPO agent correcting the Erlang C plan, on a SimPy floor calibrated on 444,448 real calls | `workforce/` |
 
-## How one call works
+The agents never call each other: a LangGraph graph passes one case file (`callverse/state.py`) from agent to
+agent, and plain code decides who works next (`callverse/graph.py`). Where money, escalation or a loyalty offer
+is at stake, code rules decide and the LLM only explains.
 
-1. A pretend customer calls and waits in line.
-2. The advisor answers.
-3. If it is a complaint, the advisor asks the complaint specialist for help, then gives the customer the fix.
-   If the customer wants to leave, the advisor asks a supervisor, who may make a loyalty offer (see `callverse/agents/retention/README.md`).
-4. When the call ends, the reviewer grades it.
-5. The floor manager looks at how busy the call center is and moves workers if needed.
-6. A scoreboard shows the results: waiting time, problems solved, and call grades.
+## Results at a glance
+
+| What | Result | Where |
+|---|---|---|
+| Churn model | AUC 0.853 on held-out customers, against 0.784 for the rule it replaced | `scripts/explain_churn.py` |
+| Calls, night-1 → night-2 | resolved 52% → 62%, quality 3.87 → 4.07; only empathy is significant (p = 0.05) with 50 calls | `evaluation/compare.md` |
+| Workforce manager | 7,003 €/day on average against 8,357 € for Erlang C (−16%), smallest worst case of the 4 policies | `workforce/README.md` |
+| Digital twin (night-2) | 68% helped at the first contact → +16% calls; ignoring them drops the service level to 77%, planning for them brings it back to 88.6% | `python -m workforce.twin` |
+| AI reviewer | too generous: kappa near 0 except accuracy (0.42) against a second grader, so its grades compare batches, not absolute quality | `evaluation/` |
+
+## CallVerse Studio
+
+The whole system in one web page, for a demo:
+
+```bash
+python studio/server.py        # opens http://127.0.0.1:8600
+```
+
+The tabs follow the story of the project, from one call to the staffing:
+
+1. **Live floor**: place a call (customer, reason, mood) and watch it. Each agent lights up while it works, the
+   conversation appears line by line and the case file fills in. At the end, the studio says what the call means
+   for the twin (helped at the first contact, or a likely repeat call).
+2. **Agents**: what each agent does, how it decides, and a button to try it live.
+3. **Call history**: replay any saved call with its decisions and grades.
+4. **Results**: the KPIs of a batch, including first-contact resolution, and the reviewer's agreement check.
+5. **Digital twin**: the pipeline from the batch's quality to the floor's workload, with the callback assumption
+   and a what-if for a better advisor as sliders, and the same 20 days simulated in each situation.
+6. **Workforce**: one simulated day with the four floor managers on the same calls, replayed every 15 minutes,
+   with the bank workload or with the twin's workload (the AI calls' repeat calls).
+
+A strip at the top of the last three tabs carries the same numbers from one step to the next. The web server uses
+only the Python standard library.
 
 ## What is in this repository
 
-This is the plan. Folders will appear as we build them.
-
 | Folder or file | What it holds |
 |---|---|
-| `settings.yaml` | Shared settings, like which AI model we all use |
-| `callverse/state.py` | The "case file" that travels through a call. Everyone agrees on it before changing it. |
-| `callverse/llm.py` | The one place where the AI model is set up. Everyone uses it. |
-| `callverse/graph.py` | Decides which worker speaks next during a call |
-| `callverse/knowledge.py` | The one place where workers search the company rules |
-| `callverse/config.py` | Reads `settings.yaml` and your `.env` file |
-| `callverse/agents/` | One folder per worker |
-| `workforce/` | The pretend call center and the floor manager |
-| `dashboard/` | The scoreboard |
-| `data/policies/` | Company rules, written as text files |
-| `data/raw/` | Downloaded public datasets. Not on GitHub because they are too big. |
-| `scripts/` | Small programs that prepare the data and fill the database |
-| `.env.example` | A model for your own `.env` file, which holds your database password |
-| `tests/` | Checks that one full call still works |
-
-## The team
-
-| Name | Works on |
-|---|---|
-|  | Pretend customer |
-|  | Advisor |
-|  | Complaint specialist |
-|  | Reviewer |
-|  | Floor manager |
-|  | Scoreboard |
-|  | Shared files and data |
+| `callverse/state.py` | The case file that travels through a call |
+| `callverse/graph.py` | The LangGraph graph: which agent works next |
+| `callverse/agents/` | One folder per agent, each with its README |
+| `callverse/knowledge.py` | The rules search (RAG over `data/policies/`) |
+| `callverse/churn.py` | The churn model |
+| `callverse/results.py` | Saved calls and their summaries |
+| `workforce/` | The SimPy floor, the floor managers, the RL agent, the evaluation and the digital twin |
+| `studio/` | CallVerse Studio, the demo web app |
+| `dashboard/` | The Streamlit scoreboard and the one-page HTML report |
+| `data/policies/` | The company rules of the fictional operator |
+| `scripts/` | Data preparation, batches of calls and evaluation |
+| `evaluation/` | Tables for the report: batch comparison, reviewer agreement |
+| `tests/` | The test suite (no AI model, database or data needed); run on every push by GitHub Actions |
+| `settings.yaml`, `.env.example` | Shared settings, and a model for your own `.env` |
 
 ## How we work together
 
@@ -193,34 +225,25 @@ streamlit run dashboard/app.py                          # or: python scripts/bui
 
 See `dashboard/README.md`.
 
-### 7b. CallVerse Studio (the virtual call center in the browser)
-
-With Ollama running and the database filled:
+### 7b. CallVerse Studio
 
 ```bash
 python studio/server.py        # opens http://127.0.0.1:8600
 ```
 
-- **Live floor**: choose a customer, a reason and a mood, then place the call. Each agent lights up while it works,
-  the conversation appears line by line, and the case file (`CallState`) fills in: what the advisor understood, the
-  complaint specialist's decision, the supervisor's offer, the outcome and the review with its reasons.
-- **Agents**: what each agent does, how it decides (LLM or code rules), and a button to try it live.
-- **Call history**: replay any saved call. Calls placed in the studio are saved in the batch `studio`.
-- **Workforce**: simulate one day of the floor (8 scenarios) with Erlang C, the two rules and the RL agent on the
-  same calls: costs, service level, and the floor replayed every 15 minutes (advisors on duty, customers waiting).
-- **Results**: the KPIs of a batch, the workforce comparison and the digital-twin report.
-
-It uses only the Python standard library for the web server: nothing new to install.
+See "CallVerse Studio" at the top of this page.
 
 ### 8. Close the loop (phase 3)
 
 After a batch of calls, see what the conversations change for the staffing:
 
 ```bash
-python -m workforce.twin --run night-1
+python -m workforce.twin --run night-2           # measures the batch, compares 4 situations, saves twin.json
+python -m workforce.train --twin                 # optional: an RL agent trained on the twin's floor (~20 min)
+python -m workforce.twin --run night-2           # again: adds the two RL agents to the comparison
 ```
 
-See "Phase 3" in `workforce/README.md`. The dashboard shows the result on the Workforce manager page.
+See "Phase 3" in `workforce/README.md`. The studio's Digital twin tab shows the same pipeline live.
 
 ### 9. Evaluation
 

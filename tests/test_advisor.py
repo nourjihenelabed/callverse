@@ -347,3 +347,42 @@ def test_consent_question_kept_when_the_customer_asks_a_change(monkeypatch):
     use(monkeypatch, ScriptedModel([f"L'option TV coûte 7,99 €. {prompts.ASK_CONSENT}"]))
     text = agent.advisor_node(call("Je voudrais ajouter l'option TV."))["messages"][0].content
     assert text.endswith(prompts.ASK_CONSENT)
+
+
+# ---------------------------------------------------------------- the rules search uses the call's subject
+
+FOLLOW_UP = "Oui, mais combien de temps cela prendra et comment je dois procéder pour les informations bancaires ?"
+
+
+def test_the_intent_gives_the_subject_of_the_search():
+    assert "paiement" in agent.rules_topic("payment_method")
+    assert "SIM" in agent.rules_topic("lost_sim")
+    assert "lent" in agent.rules_topic("slow_internet")             # not the outage procedure
+    assert "Panne" in agent.rules_topic("internet_outage")
+    assert "Résiliation" in agent.rules_topic("cancel_contract")
+    assert agent.rules_topic(None) is None and agent.rules_topic("small_talk") is None
+
+
+def test_a_follow_up_still_finds_the_procedure_of_the_call(rules):
+    """The bug of night-2-0026: the customer wanted to change payment method, then asked how to give
+    the bank details. Searched with those words only, the procedure was missed and the advisor said
+    it did not know. With the call's subject, the right section is always there."""
+    state = call("Je voudrais passer au prélèvement automatique.", FOLLOW_UP, intent="change_payment_method")
+    context, calls = agent.prefetch(state)
+    assert "Changement de moyen de paiement" in context
+    assert calls[1].arguments == {"question": FOLLOW_UP, "topic": agent.rules_topic("change_payment_method")}
+
+
+def test_without_a_known_subject_the_search_is_unchanged(rules):
+    state = call(FOLLOW_UP)
+    _, calls = agent.prefetch(state)
+    assert calls[1].arguments == {"question": FOLLOW_UP}
+
+
+def test_the_subject_sections_come_first_without_duplicates(monkeypatch):
+    found = {"topic": [{"source": "procedures.md", "section": "Changement de moyen de paiement", "text": "IBAN"}],
+             "question": [{"source": "procedures.md", "section": "Changement de moyen de paiement", "text": "IBAN"},
+                          {"source": "faq.md", "section": "Facture et paiement", "text": "Q/R"}]}
+    monkeypatch.setattr(knowledge, "search_policies", lambda q: found["topic" if q == "TOPIC" else "question"])
+    text = tools.policy_search("une question", topic="TOPIC")
+    assert text.index("Changement") < text.index("faq.md") and text.count("Changement de moyen") == 1

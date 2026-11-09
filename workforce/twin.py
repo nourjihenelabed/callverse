@@ -13,6 +13,7 @@ the twin changes how many calls there are and where they go, not how long they l
     config = twin_config(measured)              # a CenterConfig for the workforce simulation
 
 Run the whole comparison with: python -m workforce.twin --run night-1
+Then train an RL agent on the twin's floor (optional): python -m workforce.train --twin
 """
 
 import argparse
@@ -20,12 +21,15 @@ import json
 import statistics
 from pathlib import Path
 
-from workforce.simulation import QUEUES, CenterConfig
+from workforce.simulation import QUEUES, CenterConfig, Policy
 
 RESOLVED = ("resolved", "escalated")      # escalated: a supervisor calls back, the customer does not
 CALLBACK_SHARE = 0.5                       # an unresolved customer calls back once, half the time (assumption)
 MIN_CALLS = 5                              # fewer calls than this in a queue: keep the neutral value
 TWIN_PATH = Path(__file__).resolve().parent / "models" / "twin.json"
+# the RL agent retrained on the twin's floor (python -m workforce.train --twin). Not named ppo_staffing*:
+# compare.py and explain.py average the agents trained on the bank floor, and must not pick this one.
+TWIN_MODEL_PATH = Path(__file__).resolve().parent / "models" / "ppo_twin.zip"
 
 
 # ---------------------------------------------------------------- 1. measure the calls
@@ -82,6 +86,50 @@ def twin_load(measured: dict, base: CenterConfig | None = None, callback_share: 
             "repeat_factor": {q: round(r, 4) for q, r in repeat.items()}}
 
 
+def what_if_fcr(measured: dict, target: float) -> dict:
+    """Per queue: the measured FCR, raised to `target` where it is lower (a better advisor)."""
+    return {q: max(target, usable(measured, q, "fcr", 1.0)) for q in QUEUES}
+
+
+def saved_measured() -> dict | None:
+    """The measurement saved by the last `python -m workforce.twin` (no database needed)."""
+    try:
+        return json.loads(TWIN_PATH.read_text(encoding="utf-8"))["measured"]
+    except (FileNotFoundError, KeyError, ValueError):
+        return None
+
+
+class OldForecast(Policy):
+    """Runs a floor manager on the twin's floor while it still believes the old (bank) forecast.
+
+    Inside the simulation the forecast comes from the twin's settings, so a policy reading it would
+    "know" about the repeat calls. This wrapper shows it the forecast it was planned with instead:
+    the calls it then sees above that forecast are the surprise it has to notice by itself."""
+
+    def __init__(self, policy, believed: CenterConfig, actual: CenterConfig):
+        self.policy, self.believed, self.actual = policy, believed, actual
+
+    def decide(self, snapshot):
+        from dataclasses import replace
+
+        hour = min(int(snapshot.minute // 60), len(self.actual.calls_per_hour) - 1)
+        actual_rate, believed_rate = self.actual.calls_per_hour[hour], self.believed.calls_per_hour[hour]
+        ratio = believed_rate / actual_rate if actual_rate else 1.0
+        expected = {q: snapshot.expected_calls.get(q, 0) * ratio * self.believed.call_mix[q]
+                    / (self.actual.call_mix[q] or 1) for q in QUEUES}
+        return self.policy.decide(replace(snapshot, calls_next_hour=snapshot.calls_next_hour * ratio,
+                                          expected_calls=expected))
+
+
+def load_agent(path: Path, config: CenterConfig):
+    """A trained agent as a policy, or None (RL packages not installed, or no model file)."""
+    try:
+        from workforce.env import RLPolicy
+        return RLPolicy.load(path, config) if path.exists() else None
+    except Exception:
+        return None
+
+
 def twin_config(measured: dict, base: CenterConfig | None = None, **load_options) -> CenterConfig:
     """The calibrated center, with the number and mix of calls the AI conversations imply."""
     base = base or CenterConfig()
@@ -101,8 +149,20 @@ def twin_config(measured: dict, base: CenterConfig | None = None, **load_options
 
 # ---------------------------------------------------------------- 3. what it means for staffing
 
+def day_cost(result) -> float:
+    """The cost of a day as the RL reward counts it: staff + 50 € per hang-up + 8 € per late answer.
+    Uses workforce.env when the RL packages are installed; the same formula otherwise, so the twin
+    also runs (and is tested) without them."""
+    try:
+        from workforce.env import day_cost as reward_cost
+    except ImportError:
+        answered = sum(result.answered.values())
+        late = answered - sum(result.within_sla.values())
+        return result.staff_cost + 50.0 * sum(result.abandoned.values()) + 8.0 * late
+    return reward_cost(result)
+
+
 def run_days(policy, config: CenterConfig, days) -> dict:
-    from workforce.env import day_cost
     from workforce.simulation import CallCenter
 
     kpis, costs = [], []
@@ -116,27 +176,41 @@ def run_days(policy, config: CenterConfig, days) -> dict:
             "staff_cost_eur": round(mean("staff_cost_eur")), "total_cost_eur": round(statistics.mean(costs))}
 
 
-def compare(measured: dict, days=range(20_000, 20_020), target_fcr: float = 0.8) -> dict:
+def compare(measured: dict, days=range(20_000, 20_020), target_fcr: float = 0.8,
+            callback_share: float = CALLBACK_SHARE, with_rl: bool = True) -> dict:
     """The same days, for: the center as calibrated, the center the AI calls imply (planned with the old
-    forecast, then with the new one), and the center if the advisor resolved `target_fcr` of calls."""
+    forecast, then with the new one), and the center if the advisor resolved `target_fcr` of calls.
+    With the RL packages and trained agents present, two more rows: the agent trained on the bank floor,
+    which does not know about the repeat calls, and the agent retrained on the twin's floor."""
     from workforce.manager import FixedRulePolicy
+    from workforce.train import MODEL_PATH
 
     base = CenterConfig()
-    twin = twin_config(measured, base)
-    better = twin_config(measured, base, fcr={q: max(target_fcr, usable(measured, q, "fcr", 1.0)) for q in QUEUES})
+    twin = twin_config(measured, base, callback_share=callback_share)
+    better_fcr = what_if_fcr(measured, target_fcr)
+    better = twin_config(measured, base, callback_share=callback_share, fcr=better_fcr)
+    results = {
+        "As calibrated (Technion only)": run_days(FixedRulePolicy(base), base, days),
+        "AI calls, plan ignores them": run_days(FixedRulePolicy(base), twin, days),
+        "AI calls, plan uses them": run_days(FixedRulePolicy(twin), twin, days),
+        f"Advisor at {target_fcr:.0%} FCR, plan uses it": run_days(FixedRulePolicy(better), better, days),
+    }
+    if with_rl:
+        bank_agent = load_agent(MODEL_PATH, base)
+        if bank_agent is not None:
+            results["RL agent trained on bank data (does not know)"] = run_days(
+                OldForecast(bank_agent, base, twin), twin, days)
+        twin_agent = load_agent(TWIN_MODEL_PATH, twin)
+        if twin_agent is not None:
+            results["RL agent retrained on the twin"] = run_days(twin_agent, twin, days)
     return {
         "measured": measured,
-        "load": twin_load(measured, base),
-        "load_better": twin_load(measured, base, fcr={q: max(target_fcr, usable(measured, q, "fcr", 1.0))
-                                                      for q in QUEUES}),
+        "load": twin_load(measured, base, callback_share=callback_share),
+        "load_better": twin_load(measured, base, callback_share=callback_share, fcr=better_fcr),
         "target_fcr": target_fcr,
-        "callback_share": CALLBACK_SHARE,
-        "results": {
-            "As calibrated (Technion only)": run_days(FixedRulePolicy(base), base, days),
-            "AI calls, plan ignores them": run_days(FixedRulePolicy(base), twin, days),
-            "AI calls, plan uses them": run_days(FixedRulePolicy(twin), twin, days),
-            f"Advisor at {target_fcr:.0%} FCR, plan uses it": run_days(FixedRulePolicy(better), better, days),
-        },
+        "callback_share": callback_share,
+        "base_calls_per_day": round(sum(base.calls_per_hour)),
+        "results": results,
     }
 
 
@@ -164,12 +238,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run", help="the batch of AI calls to use; all saved calls if not given")
     parser.add_argument("--target-fcr", type=float, default=0.8)
+    parser.add_argument("--callback-share", type=float, default=CALLBACK_SHARE,
+                        help="share of unresolved customers who call back (an assumption)")
     args = parser.parse_args()
 
     rows = load_calls(run_id=args.run)
     if not rows:
         raise SystemExit("No saved calls. Run: python scripts/run_calls.py --calls 50 --run night-1")
-    report = compare(measure(rows), target_fcr=args.target_fcr)
+    report = compare(measure(rows), target_fcr=args.target_fcr, callback_share=args.callback_share)
     report["run"] = args.run or "all"
     print_report(report)
     TWIN_PATH.parent.mkdir(parents=True, exist_ok=True)

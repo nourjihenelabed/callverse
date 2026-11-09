@@ -58,10 +58,60 @@ def test_what_if_scenario_uses_the_target_resolution():
 
 
 def test_comparison_on_the_same_days():
-    report = twin.compare(twin.measure(HALF), days=range(20_000, 20_002))
+    report = twin.compare(twin.measure(HALF), days=range(20_000, 20_002), with_rl=False)
     names = list(report["results"])
     assert len(names) == 4
     base, ignored, planned, better = (report["results"][n] for n in names)
     assert ignored["calls"] > base["calls"]                          # the callbacks arrive
     assert planned["sla"] > ignored["sla"]                           # planning for them restores the service
     assert better["total_cost_eur"] < planned["total_cost_eur"]      # a better advisor costs less
+
+
+class ZeroCorrection:
+    """Stands in for a trained PPO model: always 'keep the Erlang C plan' (correction 0, priority off)."""
+
+    def predict(self, observation, deterministic=True):
+        return [3, 3, 3, 0], None
+
+
+def test_callback_share_is_an_assumption_you_can_change():
+    measured = twin.measure(HALF)
+    none = twin.twin_load(measured, callback_share=0.0)
+    all_ = twin.twin_load(measured, callback_share=1.0)
+    assert none["volume_factor"] < twin.twin_load(measured)["volume_factor"] < all_["volume_factor"]
+
+
+def test_old_forecast_shows_the_policy_the_bank_forecast():
+    from workforce.simulation import CallCenter
+
+    measured = twin.measure(HALF)
+    base, floor = CenterConfig(), twin.twin_config(twin.measure(HALF))
+
+    class Spy:
+        def decide(self, snapshot):
+            self.snapshot = snapshot
+            return {"general": 6, "technical": 4, "complaint": 2}
+
+    spy = Spy()
+    CallCenter(twin.OldForecast(spy, base, floor), seed=1, config=floor).run_until(130)
+    hour = int(spy.snapshot.minute // 60)
+    assert spy.snapshot.calls_next_hour == pytest.approx(base.calls_per_hour[hour])
+    shares = {q: v / sum(spy.snapshot.expected_calls.values()) for q, v in spy.snapshot.expected_calls.items()}
+    assert shares == pytest.approx(base.call_mix)                    # the bank mix, not the twin's
+    assert measured["fcr"] < 1
+
+
+def test_comparison_adds_the_rl_agents_when_they_exist(monkeypatch):
+    pytest.importorskip("gymnasium")
+    from workforce.env import RLPolicy
+
+    monkeypatch.setattr(twin, "load_agent", lambda path, config: RLPolicy(ZeroCorrection(), config))
+    report = twin.compare(twin.measure(HALF), days=range(20_000, 20_002))
+    names = list(report["results"])
+    assert names[-2:] == ["RL agent trained on bank data (does not know)", "RL agent retrained on the twin"]
+    # an agent that never corrects anything does what its plan does
+    assert report["results"][names[-2]]["calls"] == report["results"][names[1]]["calls"]
+
+
+def test_the_twin_agent_is_not_mixed_with_the_bank_agents():
+    assert not twin.TWIN_MODEL_PATH.name.startswith("ppo_staffing")   # compare.py globs ppo_staffing*.zip

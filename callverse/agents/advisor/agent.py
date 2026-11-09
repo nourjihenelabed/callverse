@@ -236,21 +236,52 @@ def last_client_message(state: CallState) -> str:
     return next((m.content for m in reversed(state.messages) if m.role == "client"), "")
 
 
+# The subject of a request in the rules' own words, from the intent the advisor understood.
+# Searched as well as the customer's words (see prefetch). Order matters: the first match wins.
+INTENT_TOPICS = [
+    (re.compile(r"payment|paiement|iban|prelevement"), "Changement de moyen de paiement : prélèvement, IBAN, espace client"),
+    (re.compile(r"lost|stolen|perte|vol_"), "Perte ou vol de la carte SIM : suspension de la ligne, nouvelle carte SIM"),
+    (re.compile(r"activat"), "Activation d'une nouvelle ligne mobile ou d'une carte SIM"),
+    (re.compile(r"slow|speed|lent"), "Débit internet lent"),
+    (re.compile(r"outage|panne|internet|technical"), "Panne internet (box fibre ou ADSL) : étapes de dépannage"),
+    (re.compile(r"cancel|terminat|resili|leave|churn"), "Résiliation : délai, frais de clôture de la box, retour du matériel"),
+    (re.compile(r"rio|portab"), "Portabilité du numéro et code RIO"),
+    (re.compile(r"invoice|bill|factur"), "Comprendre et consulter une facture"),
+    (re.compile(r"option"), "Activation ou résiliation d'une option"),
+    (re.compile(r"offer|price|upgrade|plan"), "Offres et prix du catalogue, changement d'offre"),
+    (re.compile(r"move|demenag"), "Déménagement"),
+    (re.compile(r"deliver|install|technician"), "Livraison et installation"),
+]
+
+
+def rules_topic(intent: str | None) -> str | None:
+    """The rules' words for what the customer wants, or None when the intent is unknown."""
+    intent = (intent or "").lower()
+    return next((topic for pattern, topic in INTENT_TOPICS if pattern.search(intent)), None)
+
+
 def prefetch(state: CallState) -> tuple[str, list[ToolCall]]:
     """Before the model answers, the code itself reads the customer's file and searches the
-    rules with the customer's own words. A small model often forgets a tool or writes a bad
-    search, so it starts with what it needs; it can still search again with search_policies."""
+    rules. A small model often forgets a tool or writes a bad search, so it starts with what it
+    needs; it can still search again with search_policies.
+
+    The search uses the customer's own words AND the subject of the call (from the intent the
+    advisor understood): a follow-up question often does not name its subject. Without this, a
+    customer changing payment method who then asked "how do I give my bank details?" got no answer,
+    although procedures.md explains it."""
     question = last_client_message(state)
+    topic = rules_topic(state.intent)
     try:
         customer = customer_file(state.customer_id)
     except Exception as error:      # no database: the call goes on
         customer = f"Dossier indisponible ({error})."
     try:
-        rules = policy_search(question)
+        rules = policy_search(question, topic=topic)
     except Exception as error:      # no rules index: the call goes on
         rules = f"Recherche indisponible ({error})."
+    arguments = {"question": question, **({"topic": topic} if topic else {})}
     calls = [ToolCall(name="get_customer", arguments={}),
-             ToolCall(name="search_policies", arguments={"question": question})]
+             ToolCall(name="search_policies", arguments=arguments)]
     return prompts.CONTEXT.format(customer=customer, rules=rules, warnings=missing_products(state, question)), calls
 
 
