@@ -212,3 +212,25 @@ def test_no_specialist_decision_to_contradict_in_an_everyday_call():
                "quote": "Les forfaits mobiles ne sont pas liés aux box internet"}
     r = report(MOBILE_CALL, judge=judge_says(invalid))
     assert r.scores["accuracy"].score == 4 and "pas de décision du spécialiste" in r.scores["accuracy"].explanation
+
+
+def test_a_refusal_after_the_decision_is_a_supervisor_case():
+    from callverse.agents.complaint import rules
+    from callverse.agents.quality import checks
+    from callverse.state import CallState, ComplaintResult, Message
+
+    def state(*lines, ended_by_client):
+        messages = []
+        for line in lines:
+            messages += [Message(role="client", content=line), Message(role="advisor", content="D'accord.")]
+        if ended_by_client:
+            messages = messages[:-1]
+        return CallState(call_id="t", customer_id="0001-AAAAA", persona="demanding", call_reason="complaint_billing",
+                         complaint_result=ComplaintResult(category="billing", severity=2, actions=[], decided_turn=1),
+                         messages=messages)
+
+    answered = state("Ma facture a doublé, c'est inacceptable !", "Je refuse, je veux un responsable.", "Merci.",
+                     ended_by_client=True)
+    assert checks.expected_escalation(answered, 0.1) == (True, [rules.REFUSAL_REASON])
+    # the opening words do not count, nor a refusal the advisor never got to answer
+    assert checks.expected_escalation(state("C'est inacceptable !", "Je refuse.", ended_by_client=True), 0.1)[0] is False

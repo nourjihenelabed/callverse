@@ -17,6 +17,11 @@ database:
   # so each person can use their own password without putting it on GitHub.
   url_from_env: "DATABASE_URL"
 
+advisor:
+  search_with_intent: true  # also search the rules with the call's subject, from the understood intent
+                            # (callverse/agents/advisor/agent.py, prefetch). For an ablation batch, turn it off
+                            # without editing this file: set CALLVERSE_INTENT_SEARCH=0 in the terminal.
+
 call:
   max_turns: 12             # a call stops after this many customer messages (outcome "abandoned")
 

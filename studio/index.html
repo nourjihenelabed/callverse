@@ -202,7 +202,7 @@ select:focus,input[type=text]:focus{border-color:var(--accent)}
 /* ---------- results */
 .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
 .toolbar select{width:auto;min-width:180px}
-.kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:16px}
+.kpis{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px;margin-bottom:16px}
 .kpi{padding:14px;display:grid;gap:2px}
 .kpi b{font-size:1.6rem;font-weight:800;font-variant-numeric:tabular-nums}
 .kpi span{font-size:.76rem;color:var(--muted)}
@@ -216,6 +216,41 @@ td.n,th.n{text-align:right}
 tr.best td{color:var(--good)}
 .tips{display:grid;gap:8px;margin:0;padding-left:18px;font-size:.86rem}
 
+/* ---------- story strip (results -> twin -> workforce) */
+.story{display:flex;align-items:stretch;gap:0;margin-bottom:16px;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow-x:auto}
+.story button{flex:1 1 0;min-width:150px;border:0;background:transparent;text-align:left;padding:11px 16px;cursor:pointer;display:grid;gap:2px;position:relative}
+.story button+button{border-left:1px solid var(--line)}
+.story button:hover{background:var(--panel2)}
+.story button.on{background:var(--raise)}
+.story button.on::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--accent)}
+.story small{font-family:var(--mono);font-size:.64rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.story b{font-size:.95rem}
+.story span{font-size:.74rem;color:var(--muted)}
+/* ---------- twin */
+.pipe{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;align-items:stretch;margin-bottom:16px}
+.stage4{position:relative;padding:16px;display:grid;gap:10px;align-content:start;background:var(--panel);border:1px solid var(--line)}
+.stage4:first-child{border-radius:14px 0 0 14px}
+.stage4:last-child{border-radius:0 14px 14px 0}
+.stage4+.stage4{border-left:0}
+.stage4+.stage4::before{content:"→";position:absolute;left:-12px;top:18px;width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-weight:800;font-size:.8rem;z-index:2}
+.stage4 h4{font-size:.92rem}
+.stage4 .big{font-size:2rem;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+.stage4 p{font-size:.8rem;color:var(--muted)}
+.qrow{display:grid;grid-template-columns:78px minmax(0,1fr) 38px;gap:8px;align-items:center;font-size:.8rem}
+.qrow b{text-align:right;font-variant-numeric:tabular-nums}
+.slider{display:grid;gap:4px;font-size:.8rem}
+.slider .v{font-family:var(--mono);color:var(--accent)}
+.mixbar{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--line)}
+.mixbar i{display:block;height:100%}
+.mixlegend{display:flex;gap:10px;flex-wrap:wrap;font-size:.72rem;color:var(--muted)}
+.mixlegend span{display:inline-flex;align-items:center;gap:5px}
+.mixlegend i{width:9px;height:9px;border-radius:2px;display:inline-block}
+.seg{display:inline-flex;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px;flex-wrap:wrap}
+.seg button{border:0;background:transparent;padding:7px 12px;border-radius:7px;cursor:pointer;font-weight:600;font-size:.82rem;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.loadnote{font-size:.8rem;color:var(--muted)}
+.loadnote b{color:var(--ink)}
+.link{color:var(--accent);cursor:pointer;text-decoration:underline;text-underline-offset:3px;background:none;border:0;padding:0;font:inherit}
 /* ---------- workforce */
 .wfhead{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:16px;margin-bottom:16px}
 .rlgrid{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px 12px;font-size:.84rem}
@@ -251,8 +286,9 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 .ax{fill:var(--faint);font-family:var(--mono);font-size:10px}
 .grid line{stroke:var(--line);stroke-width:1}
 .cmp td.best{color:var(--good);font-weight:700}
-@media (max-width:1250px){.floor{grid-template-columns:300px minmax(0,1fr)}.case{grid-column:1 / -1}.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.agents{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:900px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.wfhead,.lane{grid-template-columns:minmax(0,1fr)}.floor,.hist,.detail,.intro,.grid2{grid-template-columns:minmax(0,1fr)}.agents{grid-template-columns:minmax(0,1fr)}.status{margin-left:0}main{padding:14px}.top .in{padding:10px 14px}}
+@media (max-width:1250px){.floor{grid-template-columns:300px minmax(0,1fr)}.case{grid-column:1 / -1}.kpis{grid-template-columns:repeat(4,minmax(0,1fr))}.agents{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:1100px){.pipe{grid-template-columns:repeat(2,minmax(0,1fr))}.stage4{border-radius:0!important;border-left:1px solid var(--line)!important}.stage4::before{display:none}}
+@media (max-width:900px){.pipe{grid-template-columns:minmax(0,1fr)}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.wfhead,.lane{grid-template-columns:minmax(0,1fr)}.floor,.hist,.detail,.intro,.grid2{grid-template-columns:minmax(0,1fr)}.agents{grid-template-columns:minmax(0,1fr)}.status{margin-left:0}main{padding:14px}.top .in{padding:10px 14px}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -265,9 +301,10 @@ input[type=range]{width:100%;accent-color:var(--accent)}
   <nav class="nav" role="tablist">
     <button role="tab" data-view="floor" aria-selected="true">Live floor</button>
     <button role="tab" data-view="agents" aria-selected="false">Agents</button>
-    <button role="tab" data-view="workforce" aria-selected="false">Workforce</button>
     <button role="tab" data-view="history" aria-selected="false">Call history</button>
     <button role="tab" data-view="results" aria-selected="false">Results</button>
+    <button role="tab" data-view="twin" aria-selected="false">Digital twin</button>
+    <button role="tab" data-view="workforce" aria-selected="false">Workforce</button>
   </nav>
   <div class="status" id="status">
     <span class="pill" id="st-db"><i></i>Database</span>
@@ -322,13 +359,15 @@ input[type=range]{width:100%;accent-color:var(--accent)}
             <g class="n mixed" data-node="quality"><rect class="ring" x="240" y="168" width="152" height="62" rx="12"/><rect x="240" y="168" width="152" height="62" rx="12"/><text class="t" x="256" y="194">Reviewer</text><text class="s" x="256" y="214">6 grades · always last</text></g>
             <line x1="12" x2="628" y1="248" y2="248" stroke="var(--line)" stroke-dasharray="3 4"/>
             <text class="el zl" x="24" y="268">ONE CALL ABOVE · THE TWIN BELOW, AFTER A BATCH OF CALLS</text>
-            <path class="e twin" d="M316 230 V312 H458" marker-end="url(#mt)"/>
-            <text class="el tw" x="326" y="290">first-call resolution</text>
-            <text class="el tw" x="326" y="304">→ repeat calls</text>
-            <text class="el" x="24" y="296">Unresolved customers call back and some</text>
-            <text class="el" x="24" y="311">calls become complaints: the agents' quality</text>
-            <text class="el" x="24" y="326">changes how many advisors the floor needs.</text>
-            <g class="n code wfnode" data-node="workforce" tabindex="0" role="button" aria-label="Open the workforce manager"><rect x="460" y="280" width="168" height="62" rx="12"/><text class="t" x="474" y="306">Workforce manager</text><text class="s" x="474" y="326">RL · every 15 min →</text></g>
+            <path class="e twin" d="M316 230 V278" marker-end="url(#mt)"/>
+            <path class="e twin" d="M392 310 H458" marker-end="url(#mt)"/>
+            <text class="el tw" x="324" y="262">batch FCR</text>
+            <text class="el tw" x="398" y="302">workload</text>
+            <text class="el" x="24" y="296">Unresolved customers call back:</text>
+            <text class="el" x="24" y="311">the twin turns the agents' first-</text>
+            <text class="el" x="24" y="326">contact resolution into extra calls.</text>
+            <g class="n code wfnode" data-go="twin" tabindex="0" role="button" aria-label="Open the digital twin"><rect x="240" y="280" width="152" height="62" rx="12"/><text class="t" x="256" y="306">Digital twin</text><text class="s" x="256" y="326">FCR → repeat calls →</text></g>
+            <g class="n code wfnode" data-go="workforce" tabindex="0" role="button" aria-label="Open the workforce manager"><rect x="460" y="280" width="168" height="62" rx="12"/><text class="t" x="474" y="306">Workforce manager</text><text class="s" x="474" y="326">RL · every 15 min →</text></g>
             <text class="el" x="460" y="196">Routing is plain code</text>
             <text class="el" x="460" y="211">(graph.py): the LLM never</text>
             <text class="el" x="460" y="226">decides where a call goes.</text>
@@ -370,7 +409,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
       <div><span>If it's a complaint, the graph calls the <b>complaint specialist</b> first: category, severity, capped compensation, escalation, ticket.</span></div>
       <div><span>If the customer wants to leave, the <b>retention supervisor</b> reads the churn risk and decides on an offer.</span></div>
       <div><span>The call ends when the customer accepts, refuses or hangs up. The <b>reviewer</b> grades it on 6 criteria.</span></div>
-      <div><span>The results feed the <b>workforce manager</b>: first-call resolution changes how many advisors are needed.</span></div>
+      <div><span>After a batch of calls, the <b>digital twin</b> turns the share of customers helped at the first contact into repeat calls, and the <b>workforce manager</b> staffs that workload.</span></div>
     </div></div>
   </div>
   <div class="agents" id="agents"></div>
@@ -378,12 +417,16 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 
 <!-- ================= WORKFORCE ================= -->
 <section class="view" id="view-workforce" hidden>
+  <div class="story" data-step="workforce"></div>
   <div class="wfhead">
     <div class="panel"><div class="bd" style="display:grid;gap:12px">
       <div class="label" style="color:var(--accent)">The floor manager · reinforcement learning</div>
       <h2 style="font-size:1.6rem;font-weight:800">Every 15 minutes: how many advisors on each queue?</h2>
       <p class="muted">Too few and customers hang up, too many and the center pays idle staff. Erlang C plans the day in the morning from the forecast and never adapts. The RL agent corrects that plan during the day. The floor is a SimPy simulation calibrated on 444,448 real calls (Technion bank call center): 3 queues, 25 advisors with skills, customers who hang up after about 8 minutes.</p>
       <div class="wfctl">
+        <div class="wfrow"><span class="label">Workload</span>
+          <div class="seg" id="wfLoad"><button data-load="bank" aria-pressed="true">Bank data only</button><button data-load="twin" aria-pressed="false">With the AI calls' repeat calls</button></div></div>
+        <p class="loadnote" id="wfLoadNote"></p>
         <div class="scen" id="scen"></div>
         <p class="muted" id="scenTxt" style="font-size:.84rem"></p>
         <div class="wfrow"><label class="label" for="wfDay">Day</label><input type="text" id="wfDay" value="10000" inputmode="numeric">
@@ -400,7 +443,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
     </div></div>
   </div>
 
-  <div class="panel" style="margin-bottom:16px"><div class="hd"><h3>This day, four floor managers</h3><span class="label" id="wfTitle">same calls for everyone</span></div><div class="bd tw" id="wfCmp"><p class="muted">Choose a scenario and simulate the day.</p></div></div>
+  <div class="panel" style="margin-bottom:16px"><div class="hd"><h3 id="wfCmpTitle">This day, four floor managers</h3><span class="label" id="wfTitle">same calls for everyone</span></div><div class="bd tw" id="wfCmp"><p class="muted">Choose a scenario and simulate the day.</p></div></div>
 
   <div class="grid2">
     <div class="panel"><div class="hd"><h3>The floor, live</h3>
@@ -417,10 +460,23 @@ input[type=range]{width:100%;accent-color:var(--accent)}
       <div class="bd"><div class="legend2" id="wfLegend" style="margin-bottom:10px"></div><div class="charts tw" id="wfCharts"></div></div></div>
   </div>
 
-  <div class="grid2">
-    <div class="panel"><div class="hd"><h3>Over 8 scenarios × 30 test days</h3><span class="label">workforce.compare</span></div><div class="bd tw" id="wfm2"></div></div>
-    <div class="panel"><div class="hd"><h3>Digital twin: the agents' calls change the staffing</h3><span class="label">workforce.twin</span></div><div class="bd" id="twin2"></div></div>
+  <div class="panel"><div class="hd"><h3>Over 8 scenarios × 30 test days (bank workload)</h3><span class="label">workforce.compare</span></div><div class="bd tw" id="wfm2"></div></div>
+</section>
+
+<!-- ================= DIGITAL TWIN ================= -->
+<section class="view" id="view-twin" hidden>
+  <div class="story" data-step="twin"></div>
+  <div class="panel" style="margin-bottom:16px"><div class="bd" style="display:grid;gap:10px">
+    <div class="label" style="color:var(--accent)">The digital twin · the link between the agents and the workforce</div>
+    <h2 style="font-size:1.6rem;font-weight:800">Calls that are not solved come back. The twin counts them.</h2>
+    <p class="muted" style="max-width:90ch">After a batch of AI calls, the twin measures how many customers the agents helped at the first contact (resolved, or handed to a manager who calls them back). The others call again, and some general or technical calls turned into complaints. The twin turns that into the workload of the floor: how many calls per day, in which queue. The workforce manager then staffs that workload. Nothing here happens during a call: it runs after a batch.</p>
+    <div class="wfrow"><label class="label" for="twinRun">Batch of AI calls</label><select id="twinRun" style="width:auto;min-width:180px"></select><span class="muted" id="twinSource" style="font-size:.8rem"></span></div>
+  </div></div>
+  <div class="pipe" id="pipe">
+    <div class="stage4"><h4>1 · AI calls</h4><p>Loading…</p></div><div class="stage4"></div><div class="stage4"></div><div class="stage4"></div>
   </div>
+  <div class="panel"><div class="hd"><h3>The same 20 days in each situation</h3><button class="go" id="twinRunCmp" style="padding:8px 14px;font-size:.86rem">Run the comparison</button></div>
+    <div class="bd tw" id="twinCmp"><p class="muted">Simulates 20 days of the floor for each situation with the workload above (a few seconds).</p></div></div>
 </section>
 
 <!-- ================= HISTORY ================= -->
@@ -437,16 +493,14 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 
 <!-- ================= RESULTS ================= -->
 <section class="view" id="view-results" hidden>
+  <div class="story" data-step="results"></div>
   <div class="toolbar"><label class="label" for="resRun">Batch</label><select id="resRun"></select><span class="muted">KPIs of the saved calls, straight from the database.</span></div>
   <div class="kpis" id="kpis"></div>
   <div class="grid2">
     <div class="panel"><div class="hd"><h3>Reviewer grades by criterion</h3><span class="label">1 to 5</span></div><div class="bd" id="criteria"></div></div>
     <div class="panel"><div class="hd"><h3>By customer mood</h3></div><div class="bd tw" id="moodsTable"></div></div>
   </div>
-  <div class="grid2">
-    <div class="panel"><div class="hd"><h3>Digital twin: calls change the staffing</h3><span class="label">workforce/twin.py</span></div><div class="bd" id="twin"></div></div>
-    <div class="panel"><div class="hd"><h3>Workforce manager vs the rules</h3><span class="label">PPO · 30 days per scenario</span></div><div class="bd tw" id="wfm"></div></div>
-  </div>
+  <div class="panel" style="margin-bottom:16px"><div class="hd"><h3>From call quality to staffing</h3><span class="label">next step: the digital twin</span></div><div class="bd" id="bridge"></div></div>
   <div class="grid2">
     <div class="panel"><div class="hd"><h3>What the advisor should improve first</h3><span class="label">reviewer's tips</span></div><div class="bd" id="tips"></div></div>
     <div class="panel"><div class="hd"><h3>Can we trust the reviewer?</h3><span class="label">10 calls · 2nd grader</span></div><div class="bd" id="judge"></div></div>
@@ -493,7 +547,8 @@ document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>show(b.dataset
 function show(v){
   document.querySelectorAll(".nav button").forEach(b=>b.setAttribute("aria-selected",b.dataset.view===v));
   document.querySelectorAll(".view").forEach(s=>s.hidden = s.id!=="view-"+v);
-  if(v==="history") loadHistory(); if(v==="results") loadResults(); if(v==="workforce") initWorkforce();
+  if(v==="history") loadHistory(); if(v==="results") ensureTwin().then(loadResults); if(v==="twin") loadTwin(); if(v==="workforce") initWorkforce();
+  if(["results","twin","workforce"].includes(v)) ensureTwin().then(renderStory);
 }
 
 /* ---------------------------------------------------------------- status */
@@ -678,6 +733,12 @@ function finish(error){
   document.querySelectorAll(".n").forEach(n=>{ if(n.classList.contains("live")) n.classList.replace("live","seen"); });
   document.querySelectorAll(".e").forEach(e=>e.classList.remove("on"));
   if(error) $("chat").insertAdjacentHTML("beforeend",`<div class="warnbox">The call stopped: ${esc(error)}</div>`);
+  else if(LIVE && LIVE.outcome){
+    const ok=["resolved","escalated"].includes(LIVE.outcome), share=TWIN.data?Math.round(TWIN.data.callback_share*100):50;
+    $("chat").insertAdjacentHTML("beforeend",`<div class="sys" style="border-color:var(--accent)"><span class="tag code">Digital twin</span><span>${ok
+      ?(LIVE.outcome==="escalated"?"Handed to a manager who calls the customer back: counts as <b>helped at the first contact</b>.":"Resolved: counts as <b>helped at the first contact</b>, no repeat call.")
+      :`Not resolved: in the twin, this customer <b>calls back with a ${share}% chance</b>, which adds work for the floor.`} <button class="link" onclick="show('twin')">See the twin →</button></span></div>`);
+  }
   setNow(null); $("go").disabled=false; $("go").textContent="Place another call"; $("stop").hidden=true;
   $("case").innerHTML=caseHTML(LIVE); scrollChat(); loadHealth();
 }
@@ -703,12 +764,15 @@ const AGENTS = [
   say:"I don't trust the judge blindly: I measured it and found it too generous.",preset:{reason:"check_invoice",mood:"dissatisfied"}},
  {id:"workforce",name:"Workforce manager",kind:"code",tag:"RL",file:"workforce/ (simulation, env, train, twin)",role:"Decides every 15 minutes how many advisors work on each queue.",
   how:["SimPy floor (3 queues, 25 advisors, customers who hang up) calibrated on 444,448 real calls (Technion).","PPO agent compared with Erlang C and two rules on 8 scenarios × 30 days.","twin.py: the AI calls' first-call resolution creates callbacks that change the plan."],
-  say:"The twin closes the loop: how well agents handle calls changes how many people the center needs.",preset:null}
+  say:"The twin closes the loop: how well agents handle calls changes how many people the center needs.",preset:null},
+ {id:"twin",name:"Digital twin (the link)",kind:"code",tag:"after a batch",file:"workforce/twin.py",role:"Turns the quality of the AI calls into the workload of the floor.",
+  how:["Measures, per queue, the share of AI calls handled at the first contact (resolved, or a manager calls back) and the calls that became complaints.","Half of the unresolved customers call back (a stated assumption): more calls, and more of them in the complaint queue.","The workforce manager then staffs that workload; a better advisor means fewer repeat calls and a cheaper floor."],
+  say:"A bad call is not only one unhappy customer: it comes back as extra work, and the twin puts a price on it.",preset:null,go:"twin"}
 ];
 $("agents").innerHTML = AGENTS.map(a=>`<div class="panel agent"><div class="t"><h3>${esc(a.name)}</h3><span class="tag ${a.kind}" style="font-family:var(--mono);font-size:.64rem;padding:2px 8px;border-radius:5px">${esc(a.tag)}</span></div>
   <p>${esc(a.role)}</p><ul>${a.how.map(h=>`<li>${esc(h)}</li>`).join("")}</ul><p class="say">${esc(a.say)}</p><span class="file">${esc(a.file)}</span>
-  ${a.preset?`<button class="ghost try" data-id="${a.id}">Try it live →</button>`:`<button class="ghost try" data-results="1">Open the workforce floor →</button>`}</div>`).join("");
-$("agents").querySelectorAll(".try").forEach(b=>b.onclick=()=>{ if(b.dataset.results){show("workforce");return;} const a=AGENTS.find(x=>x.id===b.dataset.id); applyPreset(a.preset); show("floor"); });
+  ${a.preset?`<button class="ghost try" data-id="${a.id}">Try it live →</button>`:`<button class="ghost try" data-go="${a.go||"workforce"}">${a.go==="twin"?"Open the digital twin →":"Open the workforce floor →"}</button>`}</div>`).join("");
+$("agents").querySelectorAll(".try").forEach(b=>b.onclick=()=>{ if(b.dataset.go){show(b.dataset.go);return;} const a=AGENTS.find(x=>x.id===b.dataset.id); applyPreset(a.preset); show("floor"); });
 
 /* ---------------------------------------------------------------- history */
 let HROWS=[], HSEL=null;
@@ -750,32 +814,38 @@ $("hReplay").onclick=()=>{
 /* ---------------------------------------------------------------- results */
 async function loadResults(){
   let st;
-  try{ st = await api("/api/stats"+($("resRun").value?"?run="+encodeURIComponent($("resRun").value):"")); }
+  const rs=$("resRun"); if(!rs.dataset.init){ rs.dataset.init="1"; rs.innerHTML=`<option>${esc(TWIN.run||"")}</option>`; rs.value=TWIN.run||""; }
+  try{ st = await api("/api/stats"+(rs.value?"?run="+encodeURIComponent(rs.value):"")); }
   catch(e){ $("kpis").innerHTML=`<div class="panel kpi"><span>Database unavailable: ${esc(e.message)}</span></div>`; renderStatic(); return; }
   const sel=$("resRun"), cur=sel.value;
   sel.innerHTML=`<option value="">All batches</option>`+st.runs.map(r=>`<option ${r===cur?"selected":""}>${esc(r)}</option>`).join("");
-  sel.onchange=loadResults;
+  sel.onchange=()=>{ if(sel.value){ TWIN.run=sel.value; TWIN.data=null; } loadResults(); ensureTwin().then(renderStory); };
   const s=st.summary;
-  const k=[["Calls",s.calls,""],["Resolved",pct(s.resolved_rate),"customer accepted"],["Satisfaction",num(s.avg_satisfaction),"out of 5"],["Quality",num(s.avg_quality),"reviewer, out of 5"],["Complaints",pct(s.complaint_rate),`${pct(s.escalation_rate)} escalated`],["Wanted to leave",s.wanted_to_leave,`${pct(s.kept_rate)} handled`]];
+  const k=[["Calls",s.calls,""],["Resolved",pct(s.resolved_rate),"customer accepted"],["First-contact resolution",pct(st.fcr),"resolved or handed to a manager"],["Satisfaction",num(s.avg_satisfaction),"out of 5"],["Quality",num(s.avg_quality),"reviewer, out of 5"],["Complaints",pct(s.complaint_rate),`${pct(s.escalation_rate)} escalated`],["Wanted to leave",s.wanted_to_leave,`${pct(s.kept_rate)} handled`]];
   $("kpis").innerHTML=k.map(([a,b,c])=>`<div class="panel kpi"><span>${a}</span><b>${b??"–"}</b><em class="muted">${c}</em></div>`).join("");
   $("criteria").innerHTML=`<div class="review">${CRIT.map(c=>{const v=s.criteria[c];const col=v>=4?"var(--good)":v>=3?"var(--warn)":"var(--bad)";return `<div class="crit"><div class="r"><span>${c}</span><div class="bar"><i style="width:${(v||0)*20}%;background:${col}"></i></div><b>${num(v,1)}</b></div></div>`;}).join("")}</div>`;
   $("moodsTable").innerHTML=`<table><thead><tr><th>Mood</th><th class="n">Calls</th><th class="n">Resolved</th><th class="n">Satisfaction</th><th class="n">Quality</th></tr></thead><tbody>${Object.entries(st.by_persona).map(([m,v])=>`<tr><td>${esc(MOODEN[m]||m)}</td><td class="n">${v.calls}</td><td class="n">${pct(v.resolved_rate)}</td><td class="n">${num(v.avg_satisfaction)}</td><td class="n">${num(v.avg_quality)}</td></tr>`).join("")}</tbody></table>`;
+  const unres=st.fcr==null?null:1-st.fcr;
+  $("bridge").innerHTML=st.fcr==null?`<p class="muted">No calls in this batch.</p>`:`<div style="display:grid;grid-template-columns:auto minmax(0,1fr);gap:18px;align-items:center">
+    <div style="font-size:2.4rem;font-weight:800;line-height:1">${pct(st.fcr)}</div>
+    <div style="display:grid;gap:6px;font-size:.88rem"><span><b>First-contact resolution</b>: the share of customers helped in this call, resolved (${pct(s.resolved_rate)}) or handed to a manager who calls them back. It is higher than "Resolved" because escalated customers do not need to call again.</span>
+    <span class="muted">The other ${pct(unres)} were not helped. In real life they call again, and that is work for the floor. The digital twin turns this number into the workload the workforce manager has to staff.</span>
+    <span><button class="link" onclick="TWIN.run=$('resRun').value||TWIN.run;show('twin')">See what it means for staffing →</button></span></div></div>`;
   $("tips").innerHTML=st.tips.length?`<ol class="tips">${st.tips.map(([t,n])=>`<li>${esc(t)} <span class="muted mono">×${n}</span></li>`).join("")}</ol>`:`<p class="muted">No tips yet.</p>`;
   renderStatic();
 }
 async function renderStatic(){
   let wf={}; try{ wf=await api("/api/workforce"); }catch(e){}
-  const tw=wf.twin;
+  const tw=wf.twin; TWIN.saved=tw;
   const twinHTML = tw?`<p style="margin-bottom:10px">Measured on <b>${tw.measured.calls}</b> AI calls: <b>${pct(tw.measured.fcr)}</b> resolved at the first contact. With ${pct(tw.callback_share)} of unresolved customers calling back, the floor gets <b>${(tw.load.volume_factor-1>=0?"+":"")+Math.round((tw.load.volume_factor-1)*100)}%</b> calls.</p>
     <div class="tw"><table><thead><tr><th>Situation</th><th class="n">Calls/day</th><th class="n">SLA</th><th class="n">Hang-ups</th><th class="n">Total €/day</th></tr></thead><tbody>${Object.entries(tw.results).map(([n,r])=>`<tr><td>${esc(n)}</td><td class="n">${r.calls}</td><td class="n">${(r.sla*100).toFixed(1)}%</td><td class="n">${(r.abandonment_rate*100).toFixed(1)}%</td><td class="n">${Number(r.total_cost_eur).toLocaleString("fr-FR")}</td></tr>`).join("")}</tbody></table></div>`
     :`<p class="muted">Not computed on this computer yet. Run <span class="mono">python -m workforce.twin --run night-2</span>.</p>`;
-  $("twin").innerHTML=twinHTML; $("twin2").innerHTML=twinHTML;
+  void twinHTML;
   const cmp=wf.comparison;
   if(cmp){ const pols=["Erlang C plan","Reactive rule","Margin rule","RL agent (PPO)"];
-    $("wfm").innerHTML=`<table><thead><tr><th>Scenario</th>${pols.map(p=>`<th class="n">${esc(p)}</th>`).join("")}</tr></thead><tbody>${Object.entries(cmp).map(([sc,v])=>{const costs=pols.map(p=>v[p]?v[p].total_cost_eur:null);const best=Math.min(...costs.filter(x=>x!=null));
+    $("wfm2").innerHTML=`<table><thead><tr><th>Scenario</th>${pols.map(p=>`<th class="n">${esc(p)}</th>`).join("")}</tr></thead><tbody>${Object.entries(cmp).map(([sc,v])=>{const costs=pols.map(p=>v[p]?v[p].total_cost_eur:null);const best=Math.min(...costs.filter(x=>x!=null));
       return `<tr><td>${esc(sc.replace(/_/g," "))}</td>${pols.map((p,i)=>v[p]?`<td class="n" style="${costs[i]===best?"color:var(--good);font-weight:700":""}">${Math.round(costs[i]).toLocaleString("fr-FR")} €<br><span class="muted" style="font-size:.72rem">SLA ${(v[p].sla*100).toFixed(0)}%</span></td>`:"<td>–</td>").join("")}</tr>`;}).join("")}</tbody></table><p class="muted" style="margin-top:8px;font-size:.78rem">Total cost per day (staff + service penalties), lowest in green.</p>`; }
-  else $("wfm").innerHTML=`<p class="muted">Not computed on this computer yet. Run <span class="mono">python -m workforce.compare</span>.</p>`;
-  $("wfm2").innerHTML=$("wfm").innerHTML;
+  else $("wfm2").innerHTML=`<p class="muted">Not computed on this computer yet. Run <span class="mono">python -m workforce.compare</span>.</p>`;
   $("judge").innerHTML=`<table><thead><tr><th>Criterion</th><th class="n">Within 1 pt</th><th class="n">Reviewer higher by</th><th class="n">Kappa</th></tr></thead><tbody>
     <tr><td>relevance</td><td class="n">20%</td><td class="n">+1.80</td><td class="n" style="color:var(--bad)">0.07</td></tr>
     <tr><td>accuracy</td><td class="n">50%</td><td class="n">+1.00</td><td class="n" style="color:var(--warn)">0.42</td></tr>
@@ -786,12 +856,17 @@ async function renderStatic(){
 
 
 /* ---------------------------------------------------------------- workforce */
-const PCOL = {"Erlang C plan":"#8B97B5","Reactive rule":"#FFB547","Margin rule":"#3DD6B5","RL agent (PPO)":"#9D9BFF"};
+const PCOL = {"Erlang C plan":"#8B97B5","Reactive rule":"#FFB547","Margin rule":"#3DD6B5","RL agent (PPO)":"#9D9BFF",
+  "Erlang C plan, ignores the repeat calls":"#8B97B5","Erlang C plan, uses them":"#E9EDF7","RL agent (bank-trained)":"#9D9BFF","RL agent (retrained on the twin)":"#FF7AC6"};
+let WFLOAD="bank";
 const QN = {general:"General",technical:"Technical",complaint:"Complaints"};
 const HELD = ["late_outage","big_outage","complaint_storm","quiet_day"];
 let WF=null, WFSC="network_outage", WFI=0, WFPLAY=null, WFINIT=false;
 function initWorkforce(){
-  if(WFINIT) return; WFINIT=true; renderStatic();
+  if(WFINIT){ renderLoadNote(); if(WF && (WF.workload!==WFLOAD || (WFLOAD==="twin" && WF.key!==twinQuery()))) runDay(); return; }
+  WFINIT=true; renderStatic();
+  $("wfLoad").querySelectorAll("button").forEach(b=>b.onclick=()=>{ setLoad(b.dataset.load); runDay(); });
+  setLoad(WFLOAD);
   const list=["normal","network_outage","billing_day","afternoon_promo","late_outage","big_outage","complaint_storm","quiet_day"];
   $("scen").innerHTML=list.map(s=>`<button data-s="${s}" class="${HELD.includes(s)?"held":""}" aria-pressed="${s===WFSC}">${s.replace(/_/g," ")}</button>`).join("");
   $("scen").querySelectorAll("button").forEach(b=>b.onclick=()=>{WFSC=b.dataset.s;$("scen").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",x===b));runDay();});
@@ -803,17 +878,22 @@ function initWorkforce(){
 function stopPlay(){ clearInterval(WFPLAY); WFPLAY=null; $("wfPlay").textContent="▶ Play the day"; }
 async function runDay(){
   stopPlay(); $("wfGo").disabled=true; $("wfNote").textContent="simulating…";
-  try{ WF=await api(`/api/workforce/day?scenario=${WFSC}&day=${parseInt($("wfDay").value)||10000}`); }
+  if(WFLOAD==="twin") await ensureTwin();
+  const extra=WFLOAD==="twin"?"&workload=twin&"+twinQuery():"";
+  try{ WF=await api(`/api/workforce/day?scenario=${WFSC}&day=${parseInt($("wfDay").value)||10000}${extra}`); }
   catch(e){ $("wfNote").textContent=""; $("wfCmp").innerHTML=`<div class="warnbox">The simulation failed: ${esc(e.message)}</div>`; $("wfGo").disabled=false; return; }
-  $("wfGo").disabled=false;
+  $("wfGo").disabled=false; WF.key=WFLOAD==="twin"?twinQuery():null;
   const sc=WF.scenarios.find(s=>s.id===WFSC); $("scenTxt").textContent=sc?sc.text:"";
-  $("wfNote").textContent=WF.rl.available?`RL agent loaded (${WF.rl.why})`:`RL agent not loaded here: ${WF.rl.why}`;
+  $("wfNote").textContent=(WF.rl.available?`RL agent loaded (${WF.rl.why})`:`RL agent not loaded here: ${WF.rl.why}`)
+    +(WF.workload==="twin"?(WF.rl.twin_available?` · twin agent loaded (${WF.rl.twin_why})`:` · twin agent not trained yet (python -m workforce.train --twin)`):"");
+  $("wfCmpTitle").textContent=WF.workload==="twin"?"This day with the AI calls' repeat calls":"This day, four floor managers";
   $("wfTitle").textContent=`${WFSC.replace(/_/g," ")} · day ${WF.day}`;
   const names=Object.keys(WF.policies);
   const best=k=>k==="sla"?Math.max(...names.map(n=>WF.policies[n].kpis[k])):Math.min(...names.map(n=>WF.policies[n].kpis[k]));
   const cols=[["total_cost_eur","Total cost / day",v=>Math.round(v).toLocaleString("fr-FR")+" €"],["staff_cost_eur","Staff",v=>Math.round(v).toLocaleString("fr-FR")+" €"],["sla","Answered < 20 s",v=>(v*100).toFixed(1)+"%"],["abandonment_rate","Hung up",v=>(v*100).toFixed(1)+"%"],["avg_wait_s","Avg wait",v=>v.toFixed(0)+" s"]];
   $("wfCmp").innerHTML=`<table class="cmp"><thead><tr><th>Floor manager</th>${cols.map(c=>`<th class="n">${c[1]}</th>`).join("")}</tr></thead><tbody>${names.map(n=>{const k=WF.policies[n].kpis;return `<tr><td><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${PCOL[n]};margin-right:8px"></span>${esc(n)}</td>${cols.map(([key,,f])=>`<td class="n ${k[key]===best(key)?"best":""}">${f(k[key])}</td>`).join("")}</tr>`;}).join("")}</tbody></table>
-    <p class="muted" style="margin-top:8px;font-size:.78rem">${WF.policies[names[0]].kpis.calls} calls on this day. Total cost = staff + 50 € per hang-up + 8 € per late answer (the RL reward). Best value in green. One day is an example; the table below averages 30 test days per scenario.</p>`;
+    <p class="muted" style="margin-top:8px;font-size:.78rem">${WF.policies[names[0]].kpis.calls} calls on this day. Total cost = staff + 50 € per hang-up + 8 € per late answer (the RL reward). Best value in green. One day is an example; the table below averages 30 test days per scenario.${WF.workload==="twin"
+      ?` With the twin's workload, only "Erlang C plan, uses them" and the retrained agent were planned for the repeat calls; the others still believe the bank forecast and must notice the extra calls by themselves.`:""}</p>`;
   const sel=$("wfPolicy"), keep=sel.value; sel.innerHTML=names.map(n=>`<option>${esc(n)}</option>`).join("");
   sel.value=names.includes(keep)?keep:names[names.length-1];
   $("wfLegend").innerHTML=names.map(n=>`<span><i style="background:${PCOL[n]}"></i>${esc(n)}</span>`).join("")+`<span><i style="background:var(--bad);opacity:.5"></i>calls ÷ forecast</span>`;
@@ -855,7 +935,103 @@ function drawCharts(){
       <line class="cursor" data-x0="${L+dx/2}" data-dx="${dx}" x1="0" x2="0" y1="${T}" y2="${T+H+8+S}" stroke="var(--accent)" stroke-width="1.5"/></svg></div>`;
   }).join("");
 }
-document.querySelectorAll(".wfnode").forEach(n=>{n.onclick=()=>show("workforce");n.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();show("workforce");}};});
+document.querySelectorAll(".wfnode").forEach(n=>{const go=()=>show(n.dataset.go||"workforce");n.onclick=go;n.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();go();}};});
+
+/* ---------------------------------------------------------------- digital twin */
+const TWIN = {run:null, callback:0.5, fcr:null, data:null, saved:null, cmpKey:null, busy:null};
+const QCOL = {general:"#9D9BFF",technical:"#3DD6B5",complaint:"#FF7A7A"};
+function twinQuery(){ return `run=${encodeURIComponent(TWIN.run||"")}&callback=${TWIN.callback}&fcr=${TWIN.fcr??"off"}`; }
+async function ensureTwin(){
+  if(TWIN.data && TWIN.data.key===twinQuery()) return TWIN.data;
+  if(TWIN.busy) return TWIN.busy;
+  TWIN.busy=(async()=>{
+    try{
+      let d=await api("/api/twin?"+twinQuery());
+      if(TWIN.run===null){                                   // first time: pick the batch to show
+        const runs=d.runs||[], pick=runs.includes("night-2")?"night-2":(runs.filter(r=>r!=="studio").at(-1)||"");
+        TWIN.run=pick; if(pick) d=await api("/api/twin?"+twinQuery());
+      }
+      d.key=twinQuery(); TWIN.data=d;
+    }catch(e){ TWIN.data={error:e.message,key:twinQuery()}; }
+    TWIN.busy=null; return TWIN.data;
+  })();
+  return TWIN.busy;
+}
+function renderStory(){
+  const d=TWIN.data||{}, ok=d.measured, step={results:2,twin:3,workforce:4};
+  const plus=ok?Math.round((d.load.volume_factor-1)*100):0;
+  document.querySelectorAll(".story").forEach(el=>{
+    const on=step[el.dataset.step];
+    el.innerHTML=[
+      [1,"1 · AI calls",ok?`${d.measured.calls} calls`:"–",ok?(d.run?`batch ${esc(d.run)}`:"all batches"):(d.error?esc(d.error):"loading…"),"results"],
+      [2,"2 · Call quality",ok?`${pct(d.measured.fcr)} helped first time`:"–","resolved, or a manager calls back","results"],
+      [3,"3 · Workload (twin)",ok?`${d.twin.calls_per_day.toLocaleString("fr-FR")} calls/day`:"–",ok?`${plus>=0?"+":""}${plus}% vs the bank floor · ${Math.round(d.callback_share*100)}% call back`:"","twin"],
+      [4,"4 · Staffing",WFLOAD==="twin"?"with the repeat calls":"bank workload","the workforce manager staffs it","workforce"]
+    ].map(([n,t,b,sub,go])=>`<button class="${n===on?"on":""}" data-go="${go}" data-n="${n}"><small>${t}</small><b>${b}</b><span>${sub}</span></button>`).join("");
+    el.querySelectorAll("button").forEach(b=>b.onclick=()=>{ if(b.dataset.n==="4") setLoad("twin"); show(b.dataset.go); });
+  });
+}
+async function loadTwin(){
+  const d=await ensureTwin(); renderStory();
+  const sel=$("twinRun");
+  if(d.error){ $("pipe").innerHTML=`<div class="stage4" style="grid-column:1/-1;border-radius:14px"><div class="warnbox">${esc(d.error)}</div></div>`; return; }
+  sel.innerHTML=`<option value="">All batches</option>`+(d.runs||[]).map(r=>`<option ${r===TWIN.run?"selected":""}>${esc(r)}</option>`).join("");
+  sel.onchange=()=>{ TWIN.run=sel.value; loadTwin(); };
+  $("twinSource").textContent=d.source==="database"?"measured live from the database":"database unavailable: using the measurement saved by python -m workforce.twin";
+  renderPipe(d);
+  if(TWIN.cmpKey!==twinQuery()) $("twinCmp").innerHTML=`<p class="muted">Simulates 20 days of the floor for each situation with the workload above (a few seconds).${TWIN.cmpKey?" <b>The settings changed: run it again.</b>":""}</p>`;
+}
+function mixBar(mix){ return `<div class="mixbar">${["general","technical","complaint"].map(q=>`<i style="width:${mix[q]*100}%;background:${QCOL[q]}"></i>`).join("")}</div>`; }
+function renderPipe(d){
+  const m=d.measured, q=m.queues, plus=Math.round((d.load.volume_factor-1)*100);
+  const fcrRow=(k)=>{const v=q[k].fcr;return `<div class="qrow"><span>${QN[k]}</span><div class="bar"><i style="width:${(v??0)*100}%;background:${v==null?"var(--line)":v>=.8?"var(--good)":v>=.6?"var(--warn)":"var(--bad)"}"></i></div><b>${v==null?"–":pct(v)}</b></div>`;};
+  $("pipe").innerHTML=`
+  <div class="stage4"><h4>1 · AI calls</h4><span class="big">${m.calls}</span><p>calls in ${d.run?`batch <b>${esc(d.run)}</b>`:"all batches"}, simulated by the LangGraph agents</p>
+    <p>${["general","technical","complaint"].map(k=>`${QN[k]} ${q[k].calls}`).join(" · ")}</p>
+    <p><button class="link" onclick="show('history')">Replay them in Call history →</button></p></div>
+  <div class="stage4"><h4>2 · Measured quality</h4><span class="big">${pct(m.fcr)}</span><p>helped at the first contact: resolved, or handed to a manager who calls back</p>
+    ${["general","technical","complaint"].map(fcrRow).join("")}
+    <p>Became complaints: general ${pct(q.general.to_complaint)}, technical ${pct(q.technical.to_complaint)}. A queue with fewer than 5 calls keeps a neutral value.</p></div>
+  <div class="stage4"><h4>3 · Assumption and what-if</h4>
+    <div class="slider"><label for="cbSlider">Unresolved customers who call back: <span class="v">${Math.round(TWIN.callback*100)}%</span></label><input type="range" id="cbSlider" min="0" max="100" step="5" value="${Math.round(TWIN.callback*100)}"><p>A stated assumption (50% by default), not a measurement.</p></div>
+    <div class="slider"><label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="fcrOn" ${TWIN.fcr?"checked":""} style="margin-top:3px"><span>What if the advisor helped at least <span class="v">${Math.round((TWIN.fcr||0.8)*100)}%</span> of customers first time?</span></label><input type="range" id="fcrSlider" min="50" max="100" step="5" value="${Math.round((TWIN.fcr||0.8)*100)}" ${TWIN.fcr?"":"disabled"}><p>Raises each queue's measured rate to this value: a better advisor agent.</p></div></div>
+  <div class="stage4"><h4>4 · Workload for the floor</h4><span class="big">${d.twin.calls_per_day.toLocaleString("fr-FR")}</span><p>calls a day, against ${d.base.calls_per_day.toLocaleString("fr-FR")} on the bank floor: <b style="color:${plus>0?"var(--warn)":"var(--good)"}">${plus>=0?"+":""}${plus}%</b></p>
+    <p style="margin-top:4px">Queue mix, bank → twin</p>${mixBar(d.base.mix)}${mixBar(d.twin.mix)}
+    <div class="mixlegend">${["general","technical","complaint"].map(k=>`<span><i style="background:${QCOL[k]}"></i>${QN[k]} ${pct(d.base.mix[k])} → ${pct(d.twin.mix[k])}</span>`).join("")}</div>
+    <button class="go" style="padding:10px 14px;font-size:.88rem" onclick="setLoad('twin');show('workforce')">Staff this workload →</button></div>`;
+  let timer=null; const again=()=>{ clearTimeout(timer); timer=setTimeout(()=>{ TWIN.data=null; loadTwin(); },250); };
+  // the label follows the thumb; the twin is recomputed when the slider is released
+  $("cbSlider").oninput=e=>{ e.target.previousElementSibling.querySelector(".v").textContent=e.target.value+"%"; };
+  $("cbSlider").onchange=e=>{ TWIN.callback=+e.target.value/100; again(); };
+  $("fcrOn").onchange=e=>{ TWIN.fcr=e.target.checked?(+$("fcrSlider").value/100):null; again(); };
+  $("fcrSlider").oninput=e=>{ document.querySelector("#fcrOn + span .v").textContent=e.target.value+"%"; };
+  $("fcrSlider").onchange=e=>{ TWIN.fcr=+e.target.value/100; again(); };
+}
+async function runTwinCompare(){
+  const b=$("twinRunCmp"); b.disabled=true; b.textContent="Simulating 20 days…";
+  try{
+    const r=await api("/api/twin/compare?"+twinQuery()); TWIN.cmpKey=twinQuery();
+    const names=Object.keys(r.results), best=Math.min(...names.map(n=>r.results[n].total_cost_eur));
+    const why={"As calibrated (Technion only)":"the reference: bank workload, no AI calls",
+      "AI calls, plan ignores them":"the repeat calls arrive, but the plan does not know",
+      "AI calls, plan uses them":"Erlang C planned with the twin's workload",
+      "RL agent trained on bank data (does not know)":"the original agent, still believing the bank forecast",
+      "RL agent retrained on the twin":"the agent trained on the twin's floor (python -m workforce.train --twin)"};
+    const saving=r.results[names[2]].total_cost_eur-r.results[names[3]].total_cost_eur;
+    $("twinCmp").innerHTML=`<table class="cmp"><thead><tr><th>Situation</th><th class="n">Calls/day</th><th class="n">Answered &lt; 20 s</th><th class="n">Hung up</th><th class="n">Staff €/day</th><th class="n">Total €/day</th></tr></thead><tbody>${names.map(n=>{const v=r.results[n];return `<tr><td><b style="font-weight:600">${esc(n)}</b><br><span class="muted" style="font-size:.74rem">${esc(why[n]||"Erlang C planned with the better advisor's workload")}</span></td><td class="n">${v.calls.toLocaleString("fr-FR")}</td><td class="n">${(v.sla*100).toFixed(1)}%</td><td class="n">${(v.abandonment_rate*100).toFixed(1)}%</td><td class="n">${v.staff_cost_eur.toLocaleString("fr-FR")}</td><td class="n ${v.total_cost_eur===best?"best":""}">${v.total_cost_eur.toLocaleString("fr-FR")}</td></tr>`;}).join("")}</tbody></table>
+      <p class="muted" style="margin-top:10px;font-size:.82rem">Planning for the repeat calls costs ${(r.results[names[1]].total_cost_eur-r.results[names[2]].total_cost_eur).toLocaleString("fr-FR")} € a day less than ignoring them, because hang-ups cost more than the extra staff. An advisor at ${pct(r.target_fcr)} first-contact resolution would save ${saving.toLocaleString("fr-FR")} € a day.${names.some(n=>n.startsWith("RL"))?"":" The RL rows appear when the trained agents are on this computer."}</p>`;
+  }catch(e){ $("twinCmp").innerHTML=`<div class="warnbox">${esc(e.message)}</div>`; }
+  b.disabled=false; b.textContent="Run the comparison";
+}
+$("twinRunCmp").onclick=runTwinCompare;
+function setLoad(l){ WFLOAD=l; document.querySelectorAll("#wfLoad button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.load===l)); renderLoadNote(); renderStory(); }
+function renderLoadNote(){
+  const d=TWIN.data;
+  if(WFLOAD!=="twin"){ $("wfLoadNote").innerHTML=`The floor as calibrated on the bank data: about 1,050 calls a day. <button class="link" onclick="setLoad('twin');runDay()">Add the AI calls' repeat calls →</button>`; return; }
+  if(!d||!d.measured){ $("wfLoadNote").innerHTML=`Loading the twin's workload…`; ensureTwin().then(renderLoadNote); return; }
+  const plus=Math.round((d.load.volume_factor-1)*100);
+  $("wfLoadNote").innerHTML=`From ${d.run?`batch <b>${esc(d.run)}</b>`:"all batches"}: <b>${pct(d.measured.fcr)}</b> helped at the first contact, ${Math.round(d.callback_share*100)}% of the others call back${d.target_fcr?`, what-if advisor at ${pct(d.target_fcr)}`:""} → <b>${d.twin.calls_per_day.toLocaleString("fr-FR")} calls a day (${plus>=0?"+":""}${plus}%)</b>, complaints ${pct(d.twin.mix.complaint)} of calls. <button class="link" onclick="show('twin')">Change it in the Digital twin →</button>`;
+}
 /* ---------------------------------------------------------------- start */
 loadHealth(); loadOptions(); setInterval(loadHealth,30000);
 </script>

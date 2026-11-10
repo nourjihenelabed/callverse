@@ -49,3 +49,38 @@ def test_a_workforce_day_compares_the_policies_on_the_same_calls():
     assert max(calls) - min(calls) < 30                     # same arrivals (hang-ups differ slightly)
     timeline = day["policies"]["Erlang C plan"]["timeline"]
     assert len(timeline) == 52 and set(timeline[0]["staffed"]) == {"general", "technical", "complaint"}
+
+
+MEASURED = {"calls": 50, "fcr": 0.68, "queues": {
+    "general": {"calls": 27, "fcr": 0.7, "to_complaint": 0.1, "avg_turns": 4},
+    "technical": {"calls": 15, "fcr": 0.6, "to_complaint": 0.2, "avg_turns": 5},
+    "complaint": {"calls": 8, "fcr": 0.75, "to_complaint": 0.0, "avg_turns": 5}}}
+
+
+def test_the_twin_view_turns_quality_into_workload(monkeypatch):
+    monkeypatch.setattr(server, "twin_measured", lambda run: (MEASURED, "saved"))
+    view = server.twin_view({"run": "night-2"})
+    assert view["base"]["calls_per_day"] == 1050
+    assert view["twin"]["calls_per_day"] > 1050                       # the repeat calls
+    assert view["twin"]["mix"]["complaint"] > view["base"]["mix"]["complaint"]
+    better = server.twin_view({"run": "night-2", "fcr": "0.95"})
+    assert better["twin"]["calls_per_day"] < view["twin"]["calls_per_day"]   # a better advisor, fewer calls
+    nobody = server.twin_view({"run": "night-2", "callback": "0"})
+    assert nobody["twin"]["calls_per_day"] < view["twin"]["calls_per_day"]
+
+
+def test_a_workforce_day_with_the_twin_workload(monkeypatch):
+    monkeypatch.setattr(server, "twin_measured", lambda run: (MEASURED, "saved"))
+    bank = server.workforce_day("normal", 10_000)
+    day = server.workforce_day("normal", 10_000, {"workload": "twin", "run": "night-2"})
+    assert day["workload"] == "twin" and day["twin"]["calls_per_day"] > 1050
+    names = list(day["policies"])
+    assert names[:2] == ["Erlang C plan, ignores the repeat calls", "Erlang C plan, uses them"]
+    assert day["policies"][names[0]]["kpis"]["calls"] > bank["policies"]["Erlang C plan"]["kpis"]["calls"]
+
+
+def test_no_twin_data_is_a_clear_message(monkeypatch):
+    monkeypatch.setattr(server, "twin_measured", lambda run: (None, "none"))
+    import pytest
+    with pytest.raises(server.NoTwinData):
+        server.twin_view({})

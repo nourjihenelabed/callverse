@@ -47,3 +47,13 @@ def test_tables():
     assert "no customer flagged" in cr.retention_lines(a)
     text = cr.markdown("night-1", "night-2", a, b)
     assert "| Resolved | 20/25 (80%) | 25/25 (100%) |" in text and "### By customer mood" in text
+
+
+def test_by_reason_puts_the_biggest_drops_first():
+    def row(reason, outcome):
+        return {"call_reason": reason, "outcome": outcome, "overall": 4.0}
+    a = [row("lost_sim", "resolved"), row("lost_sim", "resolved"), row("rio_code", "refused")]
+    b = [row("lost_sim", "refused"), row("lost_sim", "resolved"), row("rio_code", "resolved")]
+    lines = cr.by_reason(a, b)
+    assert lines[0][0] == "lost_sim" and lines[0][3] == -50 and lines[-1][3] == 100
+    assert lines[0][1] == "2/2 handled, quality 4.0"

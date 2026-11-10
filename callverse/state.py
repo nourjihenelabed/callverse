@@ -81,6 +81,8 @@ class ComplaintResult(BaseModel):
     escalate: bool = False                      # True = a supervisor must decide
     escalation_reasons: list[str] = Field(default_factory=list)
     ticket_id: str | None = None
+    decided_turn: int = 0                       # the customer's messages when the decision was made: a refusal
+                                                # counts only after the customer has heard the decision
 
 
 # ---------------------------------------------------------------- supervisor (retention) -> advisor

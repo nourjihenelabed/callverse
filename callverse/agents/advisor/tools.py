@@ -50,8 +50,13 @@ def catalogue() -> dict:
 
 # ---------------------------------------------------------------- what each tool returns
 
-def policy_search(question: str) -> str:
-    hits = knowledge.search_policies(question)
+def policy_search(question: str, topic: str | None = None) -> str:
+    """The rule sections closest to the question. With a topic (the request in the rules' own words),
+    the sections of that topic come first: a follow-up such as "et pour les informations bancaires ?"
+    does not name its subject, so its words alone can miss the right procedure."""
+    hits = list(knowledge.search_policies(topic))[:2] if topic else []
+    seen = {(h["source"], h["section"]) for h in hits}
+    hits += [h for h in knowledge.search_policies(question) if (h["source"], h["section"]) not in seen]
     if not hits:
         return "Aucune règle trouvée."
     return "\n\n".join(f"[{h['source']} > {h['section']}]\n{h['text']}" for h in hits)

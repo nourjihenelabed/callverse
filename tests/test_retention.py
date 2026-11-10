@@ -140,7 +140,8 @@ def test_saying_there_is_no_offer_is_removed():
     text = advisor.finish("Je comprends votre déception. Malheureusement, nous n'avons pas d'offre de réduction "
                           "de facture ou d'avantage pour rester fidèle à l'heure actuelle. Votre dossier est transmis "
                           "à un responsable qui vous contactera sous 48 heures ouvrées.", state)
-    assert "pas d'offre" not in text and "3 mois offerts" in text and "48 heures" in text
+    # the contradiction goes; the offer waits for the manager who calls back (night-3-0034)
+    assert "pas d'offre" not in text and "3 mois offerts" not in text and "48 heures" in text
 
 
 def test_the_offer_is_not_repeated_every_turn():
@@ -151,9 +152,12 @@ def test_the_offer_is_not_repeated_every_turn():
     assert advisor.finish("Il n'y a pas de frais de résiliation.", state) == "Il n'y a pas de frais de résiliation."
 
 
-def test_escalated_complaint_instructions_keep_the_offer():
+def test_an_escalated_complaint_leaves_the_offer_to_the_manager():
+    """One hand-over: the manager who calls back about the complaint also studies the departure. An offer pushed
+    on top of an unsolved complaint was refused ("je ne veux pas d'offres", night-3-0034)."""
     from callverse.state import ComplaintResult
 
     escalated = ComplaintResult(category="service_quality", severity=2, actions=[], escalate=True)
     state = call("Je suis déçu.", wants_to_leave=True, retention=OFFER, is_complaint=True, complaint_result=escalated)
-    assert "reste valable" in advisor.reminder(state) and "3 mois offerts" in advisor.reminder(state)
+    assert "3 mois offerts" not in advisor.reminder(state)
+    assert "Ne présente aucune offre" in advisor.retention_text(state) and "3 mois" not in advisor.retention_text(state)

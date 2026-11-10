@@ -25,10 +25,12 @@ KEYS = ("sla", "abandonment_rate", "avg_wait_s", "occupancy", "staff_cost_eur", 
 RESULTS_PATH = Path(__file__).resolve().parent / "models" / "comparison.json"
 MARKDOWN_PATH = Path(__file__).resolve().parent / "models" / "results.md"
 BASELINE, REACTIVE, MARGIN, RL = "Erlang C plan", "Reactive rule", "Margin rule", "RL agent (PPO)"
+COLUMN_WIDTHS = {BASELINE: 16, REACTIVE: 16, MARGIN: 16, RL: 22}   # for the printed tables
 
 
 def run_days(policy, scenario: str, days=TEST_DAYS, reward=None) -> tuple[dict, list]:
-    """Average KPIs and the total cost of each day."""
+    """Simulates the days with one policy. Returns the average KPIs, and the total cost of each day
+    (kept day by day for the paired tests)."""
     kpis, costs = [], []
     for day in days:
         result = CallCenter(policy, seed=day, scenario=scenario).run()
@@ -40,6 +42,7 @@ def run_days(policy, scenario: str, days=TEST_DAYS, reward=None) -> tuple[dict, 
 
 
 def trained_agents() -> list[Path]:
+    """The agents trained on the bank floor (one per --seed)."""
     paths = sorted(MODEL_PATH.parent.glob("ppo_staffing*.zip"))
     if not paths:
         raise SystemExit("No trained agent yet. Run: python -m workforce.train")
@@ -47,7 +50,11 @@ def trained_agents() -> list[Path]:
 
 
 def paired_test(base_costs: list, other_costs: list) -> dict:
-    """Is the other policy really cheaper than the baseline on the same days?"""
+    """Is the other policy really cheaper than the baseline on the same days?
+
+    A paired t-test: for each day, the baseline's cost minus the other's (+ = the other is cheaper).
+    When the average saving is large compared with how much it varies from day to day
+    (|t| of at least 2.05), it is unlikely to be chance."""
     diff = [b - o for b, o in zip(base_costs, other_costs)]
     mean, sd = statistics.mean(diff), statistics.stdev(diff)
     t = mean / (sd / math.sqrt(len(diff))) if sd else float("inf")
@@ -55,17 +62,26 @@ def paired_test(base_costs: list, other_costs: list) -> dict:
             "days": len(diff), "significant": abs(t) >= 2.05}      # 2.05 = 95% level for 30 days
 
 
+def _combine_agents(per_agent: list) -> tuple[dict, dict, list]:
+    """The RL row from several trained agents: their average KPIs, the spread between them
+    (0 with one agent), and their average cost on each day (for the paired tests)."""
+    summaries = [summary for summary, _ in per_agent]
+    keys = summaries[0]
+    average = {k: statistics.mean(s[k] for s in summaries) for k in keys}
+    spread = {k: (statistics.stdev(s[k] for s in summaries) if len(summaries) > 1 else 0.0) for k in keys}
+    costs_per_day = [statistics.mean(day) for day in zip(*(costs for _, costs in per_agent))]
+    return average, spread, costs_per_day
+
+
 def compare(scenarios=tuple(ALL_SCENARIOS), days=TEST_DAYS, reward=None) -> dict:
+    """Every policy on the same days of each scenario, with the paired tests."""
     agents = [RLPolicy.load(p) for p in trained_agents()]
     results = {}
     for scenario in scenarios:
         base, base_costs = run_days(FixedRulePolicy(), scenario, days, reward)
         reactive, reactive_costs = run_days(ReactiveRulePolicy(), scenario, days, reward)
         margin, margin_costs = run_days(MarginRulePolicy(), scenario, days, reward)
-        per_agent = [run_days(agent, scenario, days, reward) for agent in agents]
-        rl = {k: statistics.mean(a[0][k] for a in per_agent) for k in base}
-        rl_spread = {k: (statistics.stdev(a[0][k] for a in per_agent) if len(agents) > 1 else 0.0) for k in base}
-        rl_costs = [statistics.mean(day) for day in zip(*(a[1] for a in per_agent))]
+        rl, rl_spread, rl_costs = _combine_agents([run_days(agent, scenario, days, reward) for agent in agents])
         results[scenario] = {
             BASELINE: _round(base),
             REACTIVE: _round(reactive),
@@ -85,34 +101,52 @@ def _round(d: dict) -> dict:
     return {k: round(v, 4) for k, v in d.items()}
 
 
+def _verdict(test: dict) -> str:
+    return "significant" if test["significant"] else "not significant"
+
+
+# ---------------------------------------------------------------- printed tables
+
 def print_tables(results: dict) -> None:
+    """One table per scenario in the terminal: KPIs per policy, then the paired tests."""
     target = CenterConfig().sla_target
     rows = [("sla", "SLA (20 s)", "{:.1%}"), ("abandonment_rate", "Hang-ups", "{:.1%}"),
             ("avg_wait_s", "Avg wait (s)", "{:.1f}"), ("staff_cost_eur", "Staff cost (€/day)", "{:,.0f}"),
             ("total_cost_eur", "Total cost (€/day)", "{:,.0f}")]
     for scenario, r in results.items():
         print(f"\n=== {scenario} ({len(TEST_DAYS)} test days, RL = average of {r['agents']} agents)")
-        print(f"{'':<20}{BASELINE:>16}{REACTIVE:>16}{MARGIN:>16}{RL:>22}")
+        print(f"{'':<20}" + "".join(f"{name:>{width}}" for name, width in COLUMN_WIDTHS.items()))
         for key, label, fmt in rows:
-            spread = r["rl_spread_between_agents"][key]
-            rl_text = fmt.format(r[RL][key]) + (f" ±{fmt.format(spread)}" if r["agents"] > 1 else "")
-            print(f"{label:<20}{fmt.format(r[BASELINE][key]):>16}{fmt.format(r[REACTIVE][key]):>16}"
-                  f"{fmt.format(r[MARGIN][key]):>16}{rl_text:>22}")
+            cells = []
+            for name, width in COLUMN_WIDTHS.items():
+                text = fmt.format(r[name][key])
+                if name == RL and r["agents"] > 1:        # the spread between the trained agents
+                    text += f" ±{fmt.format(r['rl_spread_between_agents'][key])}"
+                cells.append(f"{text:>{width}}")
+            print(f"{label:<20}" + "".join(cells))
         print(f"{'Meets SLA target':<20}" + "".join(
-            f"{('yes' if r[n]['sla'] >= target else 'NO'):>{w}}"
-            for n, w in ((BASELINE, 16), (REACTIVE, 16), (MARGIN, 16), (RL, 22))))
+            f"{('yes' if r[name]['sla'] >= target else 'NO'):>{width}}" for name, width in COLUMN_WIDTHS.items()))
         for key, label in (("rl_vs_baseline", "RL vs Erlang C"), ("rl_vs_reactive", "RL vs reactive rule"),
                            ("rl_vs_margin", "RL vs margin rule")):
             t = r[key]
-            verdict = "significant" if t["significant"] else "not significant"
             print(f"  {label}: saves {t['saving_per_day']:+,.0f} €/day, better on {t['better_days']}/{t['days']} days "
-                  f"(t = {t['t']}, {verdict})")
+                  f"(t = {t['t']}, {_verdict(t)})")
+
+
+# ---------------------------------------------------------------- Markdown tables for the README
+
+def _scenario_label(scenario: str) -> str:
+    return scenario.replace("_", " ")
+
+
+def _test_cell(test: dict) -> str:
+    return f"{test['saving_per_day']:+,.0f} €/day, better on {test['better_days']}/{test['days']} ({_verdict(test)})"
 
 
 def markdown_tables(results: dict) -> str:
     """The results as Markdown tables, ready to paste into workforce/README.md."""
     names = [BASELINE, REACTIVE, MARGIN, RL]
-    label = lambda s: s.replace("_", " ")  # noqa: E731
+    label = _scenario_label
     out = [f"Same {len(TEST_DAYS)} test days per scenario for every policy. "
            f"RL = average of {next(iter(results.values()))['agents']} agents ± the spread between them.", "",
            "### Total cost per day (staff + price of bad service)", "",
@@ -128,18 +162,16 @@ def markdown_tables(results: dict) -> str:
             cells.append(f"**{text}**" if n == best else text)
         out.append(f"| {label(scenario)} | " + " | ".join(cells) + f" | {best.replace(' (PPO)', '')} |")
     averages = [statistics.mean(r[n]["total_cost_eur"] for r in results.values()) for n in names]
+    # robustness: for each policy, its biggest extra cost over the best policy of a scenario
     worst = [max(r[n]["total_cost_eur"] - min(r[m]["total_cost_eur"] for m in names) for r in results.values())
              for n in names]
     out.append("| **average** | " + " | ".join(f"{v:,.0f} €" for v in averages) + " | |")
     out.append("| **worst gap to the best policy** | " + " | ".join(f"{v:,.0f} €" for v in worst) + " | |")
 
-    def test(t):
-        verdict = "significant" if t["significant"] else "not significant"
-        return f"{t['saving_per_day']:+,.0f} €/day, better on {t['better_days']}/{t['days']} ({verdict})"
-
     out += ["", "### Is the RL agent really better? (paired test on the same days; + = RL cheaper)", "",
             "| Scenario | RL vs Erlang C | RL vs reactive rule | RL vs margin rule |", "|---|---|---|---|"]
-    out += [f"| {label(s)} | {test(r['rl_vs_baseline'])} | {test(r['rl_vs_reactive'])} | {test(r['rl_vs_margin'])} |"
+    out += [(f"| {label(s)} | {_test_cell(r['rl_vs_baseline'])} | {_test_cell(r['rl_vs_reactive'])} "
+             f"| {_test_cell(r['rl_vs_margin'])} |")
             for s, r in results.items()]
     out += ["", "### Service", "",
             "| Scenario | SLA (20 s): Erlang C / reactive / margin / RL | Hang-ups: Erlang C / reactive / margin / RL |",

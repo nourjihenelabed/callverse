@@ -301,3 +301,23 @@ def test_no_outage_credit_under_48_hours_even_if_the_model_guesses_one():
     case.history = steps.History(box_code="box_fibre")
     steps.check_fix(call("Bonjour, mon internet ne marche plus depuis ce matin.", "complaint_technical"), case, None)
     assert case.compensation_cents == 0
+
+
+def test_a_refused_decision_marks_the_ticket_refused():
+    from callverse.agents.complaint import rules
+    updates = []
+    result = ComplaintResult(category="billing", severity=2, actions=[], escalate=True, ticket_id="TCK-1",
+                             escalation_reasons=[rules.REFUSAL_REASON])
+    state = CallState(call_id="t", customer_id="0001-AAAAA", persona="demanding", call_reason="complaint_billing",
+                      complaint_result=result, outcome="escalated")
+    tools = steps.Tools(llm=None, get_history=None, search=None, open_ticket=None,
+                        update_ticket=lambda t, s: updates.append((t, s)))
+    assert steps.follow_up(state, tools) == "refused" and updates == [("TCK-1", "refused")]
+
+
+def test_the_decision_remembers_when_it_was_made(monkeypatch):
+    monkeypatch.setattr(steps, "handle_complaint", lambda state, tools: ComplaintResult(
+        category="billing", severity=2, actions=[]))
+    monkeypatch.setattr(steps, "make_tools", lambda: None)
+    state = CallState(call_id="t", customer_id="0001-AAAAA", persona="calm", call_reason="complaint_billing", turn=3)
+    assert steps.complaint_node(state)["complaint_result"].decided_turn == 3

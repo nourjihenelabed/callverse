@@ -26,6 +26,12 @@ def offline_tools() -> steps.Tools:
 
 
 @pytest.fixture(autouse=True)
+def no_ablation_switch(monkeypatch):
+    """CALLVERSE_INTENT_SEARCH=0 left in the terminal after an ablation batch must not change the tests."""
+    monkeypatch.delenv("CALLVERSE_INTENT_SEARCH", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def complaint_specialist_offline(monkeypatch):
     monkeypatch.setattr(steps, "make_tools", offline_tools)
 

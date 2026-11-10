@@ -169,6 +169,11 @@ def expected_escalation(state: CallState, churn_risk: float | None) -> tuple[boo
         churn_risk=churn_risk,
         over_cap=over_cap,
     )
+    # a refusal of the decision, said after the customer heard it and before the call ended
+    client = [m.content for m in state.messages if m.role == "client"]
+    answered = client[:-1] if state.messages and state.messages[-1].role == "client" else client
+    if any(rules.refuses_decision(text) for text in answered[result.decided_turn:]):
+        reasons.append(rules.REFUSAL_REASON)
     return bool(reasons), reasons
 
 
