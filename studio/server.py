@@ -11,6 +11,7 @@ What it does:
   understood, the complaint specialist's decision, the supervisor's offer, the outcome and the review.
   The call goes through the real LangGraph graph (callverse/graph.py), streamed with stream_mode "tasks"
   (an agent starts) and "updates" (what it changed).
+- Scenarios: the same live call, step by step, with every file and function it runs (walkthrough.py).
 - Call history: replay any saved call (from run_calls.py, or from the studio itself: batch "studio").
 - Results: the KPIs of a batch, the workforce comparison and the digital-twin report.
 
@@ -106,6 +107,12 @@ def options() -> dict:
         "customers": customer_list(),
         "demo_customer": DEMO_CUSTOMER,
     }
+
+
+def scenarios() -> dict:
+    """The Scenarios tab: the scenarios to choose from, and what each step of a call runs (walkthrough.py)."""
+    from walkthrough import NODES, scenario_list
+    return {"scenarios": scenario_list(DEMO_CUSTOMER), "nodes": NODES}
 
 
 def customer_list(limit: int = 14) -> list[dict]:
@@ -413,6 +420,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(card or {"error": "Unknown customer id."}, 200 if card else 404)
             elif url.path == "/api/call":
                 self.stream_call(q)
+            elif url.path == "/api/scenarios":
+                self.send_json(scenarios())
             elif url.path == "/api/calls":
                 self.send_json(calls_list(q.get("run") or None))
             elif url.path.startswith("/api/calls/"):
@@ -460,8 +469,17 @@ class Handler(BaseHTTPRequestHandler):
 
         send({"type": "call", "call_id": call_id, "customer": customer_card(customer), "reason": reason,
               "persona": persona})
-        for event in call_events(state, save=q.get("save", "1") == "1"):
-            send(event)
+        save = q.get("save", "1") == "1"
+        if q.get("trace") == "1":                   # the Scenarios tab: also every function that runs
+            from walkthrough import traced_events
+            events = traced_events(call_events, state, save=save)
+        else:
+            events = call_events(state, save=save)
+        try:
+            for event in events:
+                send(event)
+        finally:
+            events.close()                          # a closed page puts the traced functions back at once
 
 
 def options_personas() -> set[str]:

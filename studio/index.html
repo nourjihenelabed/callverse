@@ -289,6 +289,49 @@ input[type=range]{width:100%;accent-color:var(--accent)}
 @media (max-width:1250px){.floor{grid-template-columns:300px minmax(0,1fr)}.case{grid-column:1 / -1}.kpis{grid-template-columns:repeat(4,minmax(0,1fr))}.agents{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:1100px){.pipe{grid-template-columns:repeat(2,minmax(0,1fr))}.stage4{border-radius:0!important;border-left:1px solid var(--line)!important}.stage4::before{display:none}}
 @media (max-width:900px){.pipe{grid-template-columns:minmax(0,1fr)}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.wfhead,.lane{grid-template-columns:minmax(0,1fr)}.floor,.hist,.detail,.intro,.grid2{grid-template-columns:minmax(0,1fr)}.agents{grid-template-columns:minmax(0,1fr)}.status{margin-left:0}main{padding:14px}.top .in{padding:10px 14px}}
+/* ---------- scenarios: one call, step by step, with the files and functions it runs */
+.walk{display:grid;grid-template-columns:290px minmax(0,1fr) 340px;gap:16px;align-items:start}
+.sclist{display:grid;gap:8px}
+.scard{border:1px solid var(--line);background:var(--panel2);border-radius:11px;padding:11px 12px;text-align:left;cursor:pointer;display:grid;gap:3px}
+.scard:hover{border-color:var(--line2);background:var(--raise)}
+.scard[aria-pressed="true"]{border-color:var(--accent);background:rgba(255,181,71,.08)}
+.scard b{font-size:.86rem}
+.scard span{font-size:.72rem;color:var(--muted)}
+.schead{display:grid;gap:10px}
+.schead .meta{display:flex;gap:8px;flex-wrap:wrap}
+.chip{font-family:var(--mono);font-size:.7rem;padding:3px 9px;border-radius:999px;border:1px solid var(--line2);color:var(--muted)}
+.chip b{color:var(--ink);font-weight:500}
+.steps{display:grid;gap:0}
+.step{position:relative;display:grid;grid-template-columns:34px minmax(0,1fr);gap:12px;padding-bottom:16px}
+.step::before{content:"";position:absolute;left:16px;top:34px;bottom:0;width:2px;background:var(--line)}
+.step:last-child::before{display:none}
+.step .no{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-family:var(--mono);font-size:.78rem;font-weight:500;background:var(--raise);border:1px solid var(--line2);z-index:1}
+.step.live .no{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);animation:ring 1.4s ease-out infinite}
+.step.expected{opacity:.62}
+.sbox{border:1px solid var(--line);background:var(--panel2);border-radius:12px;padding:12px 14px;display:grid;gap:8px;min-width:0}
+.step.live .sbox{border-color:var(--accent)}
+.sbox .t{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.sbox .t b{font-size:.95rem}
+.sbox .where{font-family:var(--mono);font-size:.72rem;color:var(--code);overflow-wrap:anywhere}
+.sbox .rw{display:grid;grid-template-columns:52px minmax(0,1fr);gap:2px 10px;font-size:.76rem;color:var(--muted)}
+.sbox .rw span:nth-child(odd){font-family:var(--mono);font-size:.66rem;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding-top:1px}
+.fn{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;font-size:.8rem}
+.fn .tag{font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;padding:2px 6px;border-radius:5px;align-self:start;white-space:nowrap}
+.fn code{font-family:var(--mono);font-size:.74rem;color:var(--ink)}
+.fn em{font-style:normal;color:#C5CDE0}
+.fn small{font-family:var(--mono);font-size:.64rem;color:var(--faint)}
+.tag.data{background:rgba(139,151,181,.16);color:#B9C3DD}
+.tag.route{background:rgba(255,181,71,.13);color:var(--accent)}
+.said{border-left:2px solid var(--line2);padding:4px 10px;font-size:.84rem;color:var(--ink)}
+.said.client{border-color:var(--llm)}
+.said.advisor{border-color:var(--accent)}
+.said small{display:block;font-family:var(--mono);font-size:.64rem;color:var(--faint);letter-spacing:.06em;text-transform:uppercase}
+.next{font-family:var(--mono);font-size:.74rem;color:var(--accent);border-top:1px dashed var(--line2);padding-top:7px}
+.next small{color:var(--faint)}
+.legend{display:flex;gap:8px;flex-wrap:wrap;font-size:.74rem;color:var(--muted);align-items:center}
+.legend .tag{font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;text-transform:uppercase;padding:2px 6px;border-radius:5px}
+@media (max-width:1250px){.walk{grid-template-columns:260px minmax(0,1fr)}.walk .case{grid-column:1/-1}}
+@media (max-width:900px){.walk{grid-template-columns:minmax(0,1fr)}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -300,6 +343,7 @@ input[type=range]{width:100%;accent-color:var(--accent)}
   </div>
   <nav class="nav" role="tablist">
     <button role="tab" data-view="floor" aria-selected="true">Live floor</button>
+    <button role="tab" data-view="scenarios" aria-selected="false">Scenarios</button>
     <button role="tab" data-view="agents" aria-selected="false">Agents</button>
     <button role="tab" data-view="history" aria-selected="false">Call history</button>
     <button role="tab" data-view="results" aria-selected="false">Results</button>
@@ -386,6 +430,41 @@ input[type=range]{width:100%;accent-color:var(--accent)}
     <div class="panel case">
       <div class="hd"><h3>Case file</h3><span class="label">CallState</span></div>
       <div class="bd" id="case"><p class="muted">Fills in live: what the advisor understood, the decisions of the specialists, the outcome and the review.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SCENARIOS ================= -->
+<section class="view" id="view-scenarios" hidden>
+  <div class="walk">
+    <div class="panel">
+      <div class="hd"><h3>Choose a scenario</h3><span class="label">conversation</span></div>
+      <div class="bd" style="display:grid;gap:14px">
+        <div class="sclist" id="sclist"><span class="muted">Loading…</span></div>
+        <p class="muted" style="font-size:.76rem">The load scenarios (outage, billing day…) run on the floor: see the <button class="link" onclick="show('workforce')">Workforce</button> tab.</p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="hd" style="align-items:flex-start">
+        <div class="schead" id="schead"><h3>Pick a scenario on the left</h3></div>
+      </div>
+      <div class="bd" style="display:grid;gap:14px">
+        <div class="legend">
+          <span class="tag llm">LLM</span> the model decides
+          <span class="tag code">code</span> rules decide
+          <span class="tag mixed">LLM + code</span>
+          <span class="tag data">data</span> PostgreSQL or the rules index
+          <span class="tag route">route</span> graph.py picks the next agent
+        </div>
+        <div id="scwarn"></div>
+        <div class="steps" id="scsteps"></div>
+      </div>
+    </div>
+
+    <div class="panel case">
+      <div class="hd"><h3>Case file</h3><span class="label">CallState</span></div>
+      <div class="bd" id="sccase"><p class="muted">Run the scenario: the case file fills in as each agent writes into it.</p></div>
     </div>
   </div>
 </section>
@@ -547,6 +626,7 @@ document.querySelectorAll(".nav button").forEach(b=>b.onclick=()=>show(b.dataset
 function show(v){
   document.querySelectorAll(".nav button").forEach(b=>b.setAttribute("aria-selected",b.dataset.view===v));
   document.querySelectorAll(".view").forEach(s=>s.hidden = s.id!=="view-"+v);
+  if(v==="scenarios") loadScenarios();
   if(v==="history") loadHistory(); if(v==="results") ensureTwin().then(loadResults); if(v==="twin") loadTwin(); if(v==="workforce") initWorkforce();
   if(["results","twin","workforce"].includes(v)) ensureTwin().then(renderStory);
 }
@@ -773,6 +853,115 @@ $("agents").innerHTML = AGENTS.map(a=>`<div class="panel agent"><div class="t"><
   <p>${esc(a.role)}</p><ul>${a.how.map(h=>`<li>${esc(h)}</li>`).join("")}</ul><p class="say">${esc(a.say)}</p><span class="file">${esc(a.file)}</span>
   ${a.preset?`<button class="ghost try" data-id="${a.id}">Try it live →</button>`:`<button class="ghost try" data-go="${a.go||"workforce"}">${a.go==="twin"?"Open the digital twin →":"Open the workforce floor →"}</button>`}</div>`).join("");
 $("agents").querySelectorAll(".try").forEach(b=>b.onclick=()=>{ if(b.dataset.go){show(b.dataset.go);return;} const a=AGENTS.find(x=>x.id===b.dataset.id); applyPreset(a.preset); show("floor"); });
+
+/* ---------------------------------------------------------------- scenarios: one call, step by step */
+// A real call through the graph (/api/call with trace=1): each agent becomes a step showing its file and
+// function, the functions that ran inside it (what they read and decided), what it wrote into the case
+// file, and why graph.py sent the call to the next agent.
+const KINDTXT = {llm:"LLM",code:"code",mixed:"LLM + code",data:"data",route:"route"};
+let SC = {list:[],nodes:{},sel:null,es:null,case:null,steps:[],cur:null,loaded:false};
+async function loadScenarios(){
+  if(SC.loaded) return;
+  try{ const d=await api("/api/scenarios"); SC.list=d.scenarios; SC.nodes=d.nodes; SC.loaded=true; }
+  catch(e){ $("sclist").innerHTML=`<span class="muted">Scenarios unavailable (${esc(e.message)}).</span>`; return; }
+  $("sclist").innerHTML = SC.list.map((s,i)=>`<button class="scard" data-i="${i}" aria-pressed="false"><b>${esc(s.title)}</b><span>${esc(REASON[s.reason]||s.reason)} · ${esc(MOODEN[s.persona]||s.persona)}</span></button>`).join("");
+  $("sclist").querySelectorAll(".scard").forEach(b=>b.onclick=()=>pickScenario(+b.dataset.i));
+  pickScenario(0);
+}
+function pickScenario(i){
+  if(SC.es){ SC.es.close(); SC.es=null; }
+  SC.sel=SC.list[i]; const s=SC.sel;
+  $("sclist").querySelectorAll(".scard").forEach(b=>b.setAttribute("aria-pressed",+b.dataset.i===i));
+  $("schead").innerHTML=`<h3>${esc(s.title)}</h3><p class="muted" style="font-size:.86rem">${esc(s.story)}</p>
+    <div class="meta"><span class="chip">customer <b>${esc(s.customer)}</b></span><span class="chip">reason <b>${esc(s.reason)}</b></span><span class="chip">mood <b>${esc(s.persona)}</b></span></div>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><button class="go" id="scgo" style="padding:10px 16px;font-size:.92rem">Run this scenario live</button>
+    <label class="check"><input type="checkbox" id="scsave"> Save the call (batch "studio")</label></div>`;
+  $("scgo").onclick=runScenario;
+  const down = HEALTH && (!HEALTH.ollama || !HEALTH.model_ready || !HEALTH.database);
+  $("scwarn").innerHTML = down?`<div class="warnbox">A live run needs PostgreSQL and Ollama (see the status at the top). The route below is shown without them.</div>`:"";
+  $("scsteps").innerHTML = `<p class="label" style="margin-bottom:12px">The route the code should take · run it to see what really happens</p>`
+    + s.route.map((r,n)=>stepHTML({node:r.node,no:n+1,expected:true,text:r.text})).join("");
+  $("sccase").innerHTML=`<p class="muted">Run the scenario: the case file fills in as each agent writes into it.</p>`;
+}
+function nodeInfo(node){ return SC.nodes[node]||{name:NODE[node]||node,file:"",func:node,reads:"",writes:""}; }
+function stepHTML(st){
+  const n=nodeInfo(st.node), kind=KIND[st.node]||"code";
+  return `<div class="step${st.expected?" expected":""}${st.live?" live":""}"${st.id?` id="${st.id}"`:""}><div class="no">${st.no}</div><div class="sbox">
+    <div class="t"><b>${esc(n.name)}</b><span class="tag ${kind}" style="font-family:var(--mono);font-size:.6rem;padding:2px 6px;border-radius:5px;text-transform:uppercase;letter-spacing:.08em">${esc(KINDTXT[kind])}</span></div>
+    <div class="where">${esc(n.file)} · ${esc(n.func)}()</div>
+    ${st.text?`<p style="font-size:.84rem">${esc(st.text)}</p>`:""}
+    ${st.expected?`<div class="rw"><span>reads</span><span>${esc(n.reads)}</span><span>writes</span><span>${esc(n.writes)}</span></div>`:""}
+    ${st.body||""}</div></div>`;
+}
+function liveBody(st){
+  const fns = st.fns.map(f=>`<span class="tag ${f.kind}">${esc(KINDTXT[f.kind]||f.kind)}</span><div><code>${esc(f.func)}()</code> <em>${esc(f.text)}</em><br><small>${esc(f.file)}</small></div>`).join("");
+  return (fns?`<div class="fn">${fns}</div>`:(st.live?`<span class="muted" style="font-size:.8rem">running…</span>`:""))
+    + st.said.map(m=>`<div class="said ${m.role}"><small>${m.role==="client"?"the customer says":"the advisor says"}</small>${esc(m.content)}</div>`).join("")
+    + (st.changed.length?`<div class="rw"><span>wrote</span><span class="mono" style="font-size:.72rem;color:#C5CDE0">${st.changed.map(esc).join("<br>")}</span></div>`:"")
+    + (st.next?`<div class="next">${esc(st.next.text)} <small>· ${esc(st.next.file)} ${esc(st.next.func)}()</small></div>`:"");
+}
+function drawStep(st){
+  const html=stepHTML({...st,body:liveBody(st)}), el=$(st.id);
+  if(el) el.outerHTML=html; else $("scsteps").insertAdjacentHTML("beforeend",html);
+}
+function changedText(k,v){
+  if(k==="tools_used") return "tools_used + "+v.map(t=>t.name).join(", ");
+  if(k==="complaint_result") return `complaint_result = ${v.category}, severity ${v.severity}/4, ${eur(v.compensation_cents)}, escalate ${v.escalate}${v.ticket_id?", ticket "+v.ticket_id:""}`;
+  if(k==="retention") return `retention = ${v.offer?"offer: "+v.offer:(v.high_risk?"a manager calls back":"no offer")}`;
+  if(k==="quality_report") return `quality_report = overall ${num(v.overall,1)}/5`;
+  return `${k} = ${typeof v==="string"?v:JSON.stringify(v)}`;
+}
+function runScenario(){
+  const s=SC.sel; if(SC.es) SC.es.close();
+  SC.case=newCase(); SC.steps=[]; SC.cur=null;
+  $("scsteps").innerHTML=""; $("scwarn").innerHTML="";
+  $("scgo").disabled=true; $("scgo").textContent="Running… (1 to 3 minutes)";
+  $("sccase").innerHTML=caseHTML(SC.case);
+  SC.es = new EventSource(`/api/call?customer=${encodeURIComponent(s.customer)}&reason=${encodeURIComponent(s.reason)}&persona=${encodeURIComponent(s.persona)}&save=${$("scsave").checked?1:0}&trace=1`);
+  SC.es.onmessage = ev => scEvent(JSON.parse(ev.data));
+  SC.es.onerror = () => { if(SC.es){ SC.es.close(); SC.es=null; if(!SC.case.outcome) scFinish("Connection to the studio server lost."); } };
+}
+function scEvent(e){
+  if(e.type==="start"){
+    if(SC.cur){ SC.cur.live=false; drawStep(SC.cur); }
+    SC.cur={id:"sc-step-"+SC.steps.length,node:e.node,no:SC.steps.length+1,live:true,fns:[],said:[],changed:[],next:null};
+    SC.steps.push(SC.cur); drawStep(SC.cur); $(SC.cur.id).scrollIntoView({block:"nearest",behavior:"smooth"});
+  } else if(e.type==="trace"){
+    if(!SC.cur) return;
+    if(e.kind==="route") SC.cur.next=e; else SC.cur.fns.push(e);
+    drawStep(SC.cur);
+  } else if(e.type==="update"){
+    if(!SC.cur) return;
+    const c=SC.case, d=e.data, st=SC.steps.slice().reverse().find(x=>x.node===e.node)||SC.cur;
+    (d.messages||[]).forEach(m=>{ st.said.push(m); c.messages.push(m); });
+    if(d.tools_used) c.tools.push(...d.tools_used);
+    ["intent","is_complaint","wants_to_leave","turn","outcome","satisfaction"].forEach(k=>{ if(k in d) c[k]=d[k]; });
+    if(d.complaint_result) c.complaint=d.complaint_result;
+    if(d.retention) c.retention=d.retention;
+    if(d.quality_report) c.review=d.quality_report;
+    st.changed=Object.entries(d).filter(([k])=>k!=="messages").map(([k,v])=>changedText(k,v));
+    drawStep(st); $("sccase").innerHTML=caseHTML(c);
+  } else if(e.type==="done"){
+    const s=e.state; SC.case.outcome=s.outcome; SC.case.satisfaction=s.satisfaction;
+    if(s.quality_report) SC.case.review=s.quality_report;
+    scFinish();
+  } else if(e.type==="error"){
+    scFinish(e.message);
+  } else if(e.type==="notice"){
+    $("scwarn").innerHTML=`<div class="warnbox">${esc(e.message)}</div>`;
+  }
+}
+function scFinish(error){
+  if(SC.es){ SC.es.close(); SC.es=null; }
+  if(SC.cur){ SC.cur.live=false; drawStep(SC.cur); }
+  if(error) $("scsteps").insertAdjacentHTML("beforeend",`<div class="warnbox">The call stopped: ${esc(error)}</div>`);
+  else if(SC.case){
+    const path=SC.steps.map(st=>nodeInfo(st.node).name).join(" → ");
+    $("scsteps").insertAdjacentHTML("beforeend",`<div class="sys" style="justify-self:stretch;max-width:none;border-color:var(--accent)"><span class="tag code">done</span><span>Outcome ${outcomeBadge(SC.case.outcome)} after ${SC.steps.length} steps: ${esc(path)}.</span></div>`);
+  }
+  $("scgo").disabled=false; $("scgo").textContent="Run it again";
+  if(SC.case) $("sccase").innerHTML=caseHTML(SC.case);
+}
 
 /* ---------------------------------------------------------------- history */
 let HROWS=[], HSEL=null;

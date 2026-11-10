@@ -35,6 +35,68 @@ def test_errors_are_reported_instead_of_crashing(monkeypatch):
     assert events[-1]["type"] == "error" and "not found" in events[-1]["message"]
 
 
+def test_a_traced_call_shows_the_functions_and_the_routing_then_puts_everything_back():
+    import walkthrough
+
+    import callverse.graph as graph
+    from callverse.agents.complaint import steps
+    before = (graph.after_advisor, list(steps.STEPS))
+    state = CallState(call_id="s3", customer_id="0000-TEST", persona="dissatisfied", call_reason="complaint_billing")
+    events = list(walkthrough.traced_events(server.call_events, state, save=False))
+    assert events[-1]["type"] == "done"
+    traces = [e for e in events if e["type"] == "trace"]
+    funcs = [e["func"] for e in traces]
+    # the complaint specialist's steps, in order, then its ticket
+    assert [f for f in funcs if f in walkthrough.STEP_PROBES] == list(walkthrough.STEP_PROBES)
+    assert "open_ticket" in funcs and "understand" in funcs and "judge" in funcs
+    routes = [e["text"] for e in traces if e["kind"] == "route"]
+    assert routes[0].startswith("→ advisor") and any(r.startswith("→ complaint:") for r in routes)
+    # a trace comes after its agent starts: the first one belongs to the customer
+    assert events.index(traces[0]) > next(i for i, e in enumerate(events) if e["type"] == "start")
+    assert (graph.after_advisor, list(steps.STEPS)) == before          # nothing left wrapped
+
+
+def test_only_one_call_is_traced_at_a_time():
+    import walkthrough
+    with walkthrough.tracing([]) as first:
+        with walkthrough.tracing([]) as second:
+            assert first is True and second is False
+
+
+def test_every_file_and_function_named_in_the_walkthrough_exists():
+    import ast
+    import importlib
+
+    import walkthrough
+    root = Path(__file__).resolve().parent.parent
+
+    def defined(file: str, name: str) -> bool:
+        tree = ast.parse((root / file).read_text(encoding="utf-8"))
+        return any(isinstance(n, ast.FunctionDef) and n.name == name for n in ast.walk(tree))
+
+    for node in walkthrough.NODES.values():
+        assert defined(node["file"], node["func"]), node
+    for module, attr, _, file, _ in walkthrough.PROBES:
+        assert callable(getattr(importlib.import_module(module), attr)), (module, attr)
+        assert (root / file).exists(), file
+    for name in walkthrough.STEP_PROBES:
+        assert defined(walkthrough.STEPS_FILE, name), name
+
+
+def test_the_scenarios_list_works_without_a_database(monkeypatch):
+    import walkthrough
+
+    def no_database(kind, demo):
+        raise ConnectionError("no PostgreSQL")
+    monkeypatch.setattr(walkthrough, "pick_customer", no_database)
+    data = server.scenarios()
+    assert len(data["scenarios"]) == len(walkthrough.SCENARIOS)
+    for s in data["scenarios"]:
+        assert s["customer"] == server.DEMO_CUSTOMER
+        assert s["route"][0]["node"] == "client" and s["route"][-1]["node"] == "quality"
+        assert all(step["node"] in data["nodes"] for step in s["route"])
+
+
 def test_jsonable_handles_models_and_dates():
     from datetime import datetime
     out = server.jsonable({"m": Message(role="client", content="Bonjour"), "at": datetime(2026, 1, 2)})

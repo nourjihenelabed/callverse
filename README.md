@@ -66,12 +66,17 @@ The tabs follow the story of the project, from one call to the staffing:
 1. **Live floor**: place a call (customer, reason, mood) and watch it. Each agent lights up while it works, the
    conversation appears line by line and the case file fills in. At the end, the studio says what the call means
    for the twin (helped at the first contact, or a likely repeat call).
-2. **Agents**: what each agent does, how it decides, and a button to try it live.
-3. **Call history**: replay any saved call with its decisions and grades.
-4. **Results**: the KPIs of a batch, including first-contact resolution, and the reviewer's agreement check.
-5. **Digital twin**: the pipeline from the batch's quality to the floor's workload, with the callback assumption
+2. **Scenarios**: pick one of five scenarios (an invoice question, an outage, a third billing complaint, a
+   customer at high churn risk who wants to leave, an offer question). Before it runs, the page shows the route
+   the code should take; during a real call, each agent becomes a step with its file and function, every function
+   that runs inside it (what it read in PostgreSQL or the rules index, what the LLM or the rules decided), what it
+   wrote into the case file, and why `graph.py` sent the call to the next agent (`studio/walkthrough.py`).
+3. **Agents**: what each agent does, how it decides, and a button to try it live.
+4. **Call history**: replay any saved call with its decisions and grades.
+5. **Results**: the KPIs of a batch, including first-contact resolution, and the reviewer's agreement check.
+6. **Digital twin**: the pipeline from the batch's quality to the floor's workload, with the callback assumption
    and a what-if for a better advisor as sliders, and the same 20 days simulated in each situation.
-6. **Workforce**: one simulated day with the four floor managers on the same calls, replayed every 15 minutes,
+7. **Workforce**: one simulated day with the four floor managers on the same calls, replayed every 15 minutes,
    with the bank workload or with the twin's workload (the AI calls' repeat calls).
 
 A strip at the top of the last three tabs carries the same numbers from one step to the next. The web server uses
