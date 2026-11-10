@@ -242,7 +242,8 @@ def handle_complaint(state: CallState, tools: Tools) -> ComplaintResult:
 
 
 def complaint_node(state: CallState) -> dict:
-    return {"complaint_result": handle_complaint(state, make_tools())}
+    result = handle_complaint(state, make_tools())
+    return {"complaint_result": result.model_copy(update={"decided_turn": state.turn})}
 
 
 def follow_up(state: CallState, tools: Tools) -> str | None:
@@ -250,6 +251,10 @@ def follow_up(state: CallState, tools: Tools) -> str | None:
     result = state.complaint_result
     if result is None or result.ticket_id is None:
         return None
+    # refused by the customer: the ticket is "refused", and a supervisor reviews it (complaint_procedures.md)
+    if rules.REFUSAL_REASON in result.escalation_reasons:
+        tools.update_ticket(result.ticket_id, "refused")
+        return "refused"
     # an escalated case waits for the supervisor, even if the customer said "d'accord"
     if result.escalate:
         return None

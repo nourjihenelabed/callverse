@@ -19,6 +19,7 @@ The AI model comes from get_model(), so tests can replace it with a fake one.
 """
 
 import json
+import os
 import re
 from difflib import SequenceMatcher
 
@@ -26,8 +27,10 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from pydantic import BaseModel, Field
 
 from callverse.agents.advisor import prompts
+from callverse.agents.complaint import rules as complaint_rules
 from callverse.agents.advisor.tools import (build_tools, catalogue, customer_file, euros, policy_search,
                                             product_codes)
+from callverse.config import load_settings
 from callverse.llm import get_llm
 from callverse.state import CallState, Message, ToolCall
 
@@ -77,7 +80,19 @@ def advisor_node(state: CallState) -> dict:
         if (state.wants_to_leave or update.get("wants_to_leave")) and state.retention is None:
             return update
 
-    # 3. answer the customer, with the tools
+    # 3. the customer refuses the specialist's decision, or asks for a manager: a refused ticket goes to a
+    #    supervisor (complaint_procedures.md), decided by code, once
+    result = state.complaint_result
+    if (result is not None and not result.escalate and state.turn > result.decided_turn
+            and complaint_rules.refuses_decision(last_client_message(state))):
+        result = result.model_copy(update={
+            "escalate": True,
+            "escalation_reasons": [*result.escalation_reasons, complaint_rules.REFUSAL_REASON],
+            "rules_cited": [*result.rules_cited, complaint_rules.RULE_REFUSED, complaint_rules.RULE_RECOURSE]})
+        update["complaint_result"] = result
+        state = state.model_copy(update={"complaint_result": result})
+
+    # 4. answer the customer, with the tools
     text, calls = answer(model, state)
     update["messages"] = [Message(role="advisor", content=text)]
     if calls:
@@ -152,6 +167,7 @@ def system_prompt(state: CallState) -> str:
             compensation=euros(result.compensation_cents) if result.compensation_cents else "aucune",
             rules=", ".join(result.rules_cited) or "aucune",
             escalation=prompts.ESCALATION if result.escalate else "",
+            ticket=result.ticket_id or "pas encore attribuée",
         )
     return text
 
@@ -160,6 +176,8 @@ def retention_text(state: CallState) -> str:
     r = state.retention
     if r is None:
         return ""
+    if r.offer and state.complaint_result is not None and state.complaint_result.escalate:
+        return prompts.RETENTION_DEFERRED        # one hand-over: the manager who calls back sees everything
     if r.supervisor and r.offer:
         return prompts.RETENTION_OFFER.format(offer=r.offer)
     if r.supervisor:
@@ -175,8 +193,8 @@ def reminder(state: CallState) -> str:
     if result is None:
         return prompts.REMINDER
     if result.escalate:
-        offer = state.retention.offer if state.retention and state.retention.offer else None
-        return prompts.ESCALATED_REMINDER + (prompts.OFFER_STILL_VALID.format(offer=offer) if offer else "")
+        refused = complaint_rules.REFUSAL_REASON in result.escalation_reasons
+        return prompts.ESCALATED_REMINDER + (prompts.REFUSED_REMINDER if refused else "")
     return prompts.COMPLAINT_REMINDER.format(compensation=compensation_text(result.compensation_cents))
 
 
@@ -232,6 +250,38 @@ def tell_escalation(text: str, state: CallState) -> str:
     return f"{text} {prompts.ESCALATION_SENTENCE}"
 
 
+ASKS_REFERENCE = re.compile(r"num[ée]ro (de |du )?(suivi|dossier|ticket|r[ée]f[ée]rence)|r[ée]f[ée]rence|"
+                            r"suivre (mon|le) dossier", re.I)
+
+
+def give_reference(text: str, state: CallState) -> str:
+    """The customer asks for a tracking number: the ticket exists, so give it (the advisor used to answer
+    "je ne peux pas vous donner de numéro de suivi", night-2-0048 and night-3-0003)."""
+    result = state.complaint_result
+    if (result is None or not result.ticket_id or result.ticket_id in text
+            or not ASKS_REFERENCE.search(last_client_message(state))):
+        return text
+    kept = [s for s in sentences(text) if not re.search(r"(pas|aucun).{0,40}(num[ée]ro|r[ée]f[ée]rence)", s, re.I)]
+    text = " ".join(kept) or text
+    sentence = prompts.REFERENCE_SENTENCE.format(ticket=result.ticket_id)
+    if text.endswith(prompts.CLOSING):
+        return f"{text[:-len(prompts.CLOSING)].rstrip()} {sentence} {prompts.CLOSING}"
+    return f"{text} {sentence}"
+
+
+def tell_recourse(text: str, state: CallState) -> str:
+    """A refused decision: the customer hears the recourse once (complaint_procedures.md > Recours du client)."""
+    result = state.complaint_result
+    if result is None or complaint_rules.REFUSAL_REASON not in result.escalation_reasons:
+        return text
+    said = [m.content for m in state.messages if m.role == "advisor"] + [text]
+    if any(re.search(r"m[ée]diateur", s, re.I) for s in said):
+        return text
+    if text.endswith(prompts.CLOSING):
+        return f"{text[:-len(prompts.CLOSING)].rstrip()} {prompts.RECOURSE_SENTENCE} {prompts.CLOSING}"
+    return f"{text} {prompts.RECOURSE_SENTENCE}"
+
+
 def last_client_message(state: CallState) -> str:
     return next((m.content for m in reversed(state.messages) if m.role == "client"), "")
 
@@ -254,6 +304,17 @@ INTENT_TOPICS = [
 ]
 
 
+def intent_search_on() -> bool:
+    """settings.yaml advisor.search_with_intent, unless CALLVERSE_INTENT_SEARCH=0 turns it off for an ablation."""
+    flag = os.getenv("CALLVERSE_INTENT_SEARCH")
+    if flag is not None:
+        return flag.strip().lower() not in ("0", "false", "no", "off")
+    try:
+        return bool(load_settings().get("advisor", {}).get("search_with_intent", True))
+    except Exception:
+        return True
+
+
 def rules_topic(intent: str | None) -> str | None:
     """The rules' words for what the customer wants, or None when the intent is unknown."""
     intent = (intent or "").lower()
@@ -270,7 +331,7 @@ def prefetch(state: CallState) -> tuple[str, list[ToolCall]]:
     customer changing payment method who then asked "how do I give my bank details?" got no answer,
     although procedures.md explains it."""
     question = last_client_message(state)
-    topic = rules_topic(state.intent)
+    topic = rules_topic(state.intent) if intent_search_on() else None
     try:
         customer = customer_file(state.customer_id)
     except Exception as error:      # no database: the call goes on
@@ -344,7 +405,7 @@ def finish(text: str, state: CallState) -> str:
     """The checks done by code on every answer, in order."""
     text = no_consent_without_request(keep_compensation(text, state), state)
     text = keep_retention_offer(tidy_answer(text), state)
-    return tell_escalation(text, state)
+    return give_reference(tell_recourse(tell_escalation(text, state), state), state)
 
 
 NO_OFFER = re.compile(r"(pas|aucune?|plus) d[e'’ ]\s*(offre|avantage|geste|réduction|remise|promotion)|"
@@ -361,6 +422,10 @@ def keep_retention_offer(text: str, state: CallState) -> str:
     text = " ".join(kept) or text
     said_before = any(r.offer_key.lower() in m.content.lower() for m in state.messages if m.role == "advisor")
     if said_before or r.offer_key.lower() in text.lower():
+        return text
+    # an escalated complaint: the manager who calls back handles the departure too (an offer pushed on top of
+    # an unsolved complaint was refused: "je ne veux pas d'offres, je veux savoir ce qui se passe", night-3-0034)
+    if state.complaint_result is not None and state.complaint_result.escalate:
         return text
     sentence = prompts.RETENTION_SENTENCE.format(offer=r.offer)
     if text.endswith(prompts.CLOSING):

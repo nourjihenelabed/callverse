@@ -213,4 +213,17 @@ floor the AI calls imply (the volume and mix of `twin.json`, with the same rando
 | RL agent trained on bank data (does not know) | the original agent on the twin's floor, still believing the bank forecast (`OldForecast` shows it the old forecast): does it notice the extra calls by itself? |
 | RL agent retrained on the twin | the agent that learned the twin's workload |
 
+Result, night-2 workload (1,217 calls a day), the same 20 days:
+
+| Floor manager | SLA | Hang-ups | Staff €/day | Total €/day |
+|---|---|---|---|---|
+| Erlang C, plan ignores the repeat calls | 77.2% | 6.9% | 4,232 | 10,008 |
+| Erlang C, plan uses them | 88.6% | 2.1% | 4,787 | 6,949 |
+| RL agent trained on bank data (does not know) | 90.8% | 2.4% | 5,553 | 7,672 |
+| RL agent retrained on the twin | 93.5% | 1.4% | 5,599 | 6,971 |
+
+The bank-trained agent is never told about the repeat calls, yet it saves about 2,300 € a day against the plan that
+ignores them: it sees the calls arriving above forecast and adds advisors. Retrained on the twin, the agent gives the
+best service of all for the cost of an Erlang C plan that knows the twin's numbers.
+
 The studio's Workforce tab shows both on a single day, with the switch "With the AI calls' repeat calls".

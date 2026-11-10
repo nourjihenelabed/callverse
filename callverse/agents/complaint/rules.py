@@ -129,6 +129,25 @@ def same_step(a: str, b: str) -> bool:
     return bool(key_a and key_b) and (key_a.startswith(key_b) or key_b.startswith(key_a))
 
 
+# The customer refuses the specialist's decision, or asks for a manager. complaint_procedures.md: a refused
+# ticket is reviewed by a supervisor, and the advisor gives the customer's recourse. Without this, the advisor
+# once answered "les réclamations sont transmises à un responsable dans certains cas, mais pas dans le vôtre",
+# and the customer hung up (night-3-0003).
+REFUSAL = re.compile(
+    r"\bje (la |le )?refuse\b|n'accepte pas|ne l'accepte pas|inacceptable|pas d'accord avec|je conteste|"
+    r"(parl\w*|voir|pass\w*|joindre|avoir|mett\w* en relation)( directement)? (a|au|avec|un|le|votre) ?"
+    r"(un |le |votre |ce )?(responsable|superviseur|manager|chef)|"
+    r"\b(veux|voudrais|exige|demande)\b[^.?!]{0,60}\b(un|le|votre) (responsable|superviseur|manager)\b", re.I)
+REFUSAL_REASON = "le client refuse la solution proposée (un ticket refusé est revu par un superviseur)"
+RULE_REFUSED = "complaint_procedures.md > Suivi des tickets"
+RULE_RECOURSE = "complaint_procedures.md > Recours du client"
+
+
+def refuses_decision(text: str) -> bool:
+    """The customer refuses the proposed solution or asks for a manager ("je refuse", "un responsable")."""
+    return bool(REFUSAL.search(_plain(text)))
+
+
 def escalation_reasons(
     *, legal_threat: bool, repeat_count: int, churn_risk: float | None, over_cap: bool
 ) -> list[str]:

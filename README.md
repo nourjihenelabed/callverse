@@ -48,6 +48,9 @@ is at stake, code rules decide and the LLM only explains.
 | Calls, night-1 → night-2 | resolved 52% → 62%, quality 3.87 → 4.07; only empathy is significant (p = 0.05) with 50 calls | `evaluation/compare.md` |
 | Workforce manager | 7,003 €/day on average against 8,357 € for Erlang C (−16%), smallest worst case of the 4 policies | `workforce/README.md` |
 | Digital twin (night-2) | 68% helped at the first contact → +16% calls; ignoring them drops the service level to 77%, planning for them brings it back to 88.6% | `python -m workforce.twin` |
+| RL on the twin's workload | the bank-trained agent, not told about the repeat calls, still reaches 90.8% (7,672 €/day against 10,008 € for the plan that ignores them); retrained on the twin: 93.5%, 1.4% hang-ups, 6,971 €/day | `python -m workforce.train --twin` |
+| Calls, night-2 → night-3 | after three changes (retention-offer guard, outage credit rule, rules search by intent): quality 4.07 → 3.74 and empathy 3.96 → 3.46, both significant. Ablation night-3b, the same code with the intent search off: resolution is still down (62% → 40%), so the search is not the cause. The losses gather on complaints and customers leaving, where the two stricter rules apply. Night-3 and night-3b differ only by the search, yet resolution moves by 10 points: with 50 calls, that is the size of chance | `scripts/compare_runs.py` |
+| Calls, night-3 → night-5 | after reading the failed calls (`scripts/export_calls.py`), three targeted fixes: escalate when a customer refuses the decision and tell them their recourse, give the ticket reference, no loyalty offer on top of an escalated complaint. Empathy 3.46 → 3.82 (p = 0.05) and quality without the outcome 4.21 → 4.40 (p = 0.04), both significant; complaints handled 2/10 → 6/10, customers leaving handled 30% → 50%. Against night-2, no difference is significant (resolved 62% → 44%, p = 0.07): more calls end escalated instead of resolved, and the drop sits on dissatisfied customers asking for routine requests, not on the routes we changed | `evaluation/compare_night3_night5.md` |
 | AI reviewer | too generous: kappa near 0 except accuracy (0.42) against a second grader, so its grades compare batches, not absolute quality | `evaluation/` |
 
 ## CallVerse Studio
@@ -249,6 +252,7 @@ See "Phase 3" in `workforce/README.md`. The studio's Digital twin tab shows the 
 
 ```bash
 python scripts/compare_runs.py night-1 night-2 --markdown evaluation/compare.md   # two batches, with significance tests
+$env:CALLVERSE_INTENT_SEARCH="0"; python scripts/run_calls.py --calls 50 --run night-3b   # ablation: intent search off (PowerShell)
 python scripts/judge_agreement.py export --run night-2 --calls 10                # grade 10 calls yourself...
 python scripts/judge_agreement.py compare                                        # ...and compare with the AI reviewer
 python scripts/explain_churn.py                                                  # the churn model's test results

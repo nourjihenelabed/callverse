@@ -109,6 +109,24 @@ def by_mood(a: list[dict], b: list[dict]) -> list[tuple[str, str, str]]:
     return lines
 
 
+def by_reason(a: list[dict], b: list[dict]) -> list[tuple[str, str, str, int]]:
+    """Per call reason: handled calls and average quality in each batch, and the change in handled calls.
+    Few calls per reason, so this is a pointer to where to look (read the calls), not a test."""
+    def cell(rows):
+        if not rows:
+            return "–", None
+        handled = sum(1 for r in rows if r["outcome"] in HANDLED)
+        quality = values(rows, lambda r: r["overall"])
+        avg = f", quality {statistics.mean(quality):.1f}" if quality else ""
+        return f"{handled}/{len(rows)} handled{avg}", handled / len(rows)
+    lines = []
+    for reason in sorted({r.get("call_reason", "?") for r in a} | {r.get("call_reason", "?") for r in b}):
+        (xa, ha), (xb, hb) = (cell([r for r in rows if r.get("call_reason", "?") == reason]) for rows in (a, b))
+        change = round(((hb or 0) - (ha or 0)) * 100) if ha is not None and hb is not None else 0
+        lines.append((reason, xa, xb, change))
+    return sorted(lines, key=lambda line: line[3])          # the biggest drops first
+
+
 def retention_lines(rows: list[dict]) -> str:
     leaving = [r for r in rows if r.get("wants_to_leave")]
     if not leaving:
@@ -124,6 +142,9 @@ def markdown(name_a: str, name_b: str, a: list[dict], b: list[dict]) -> str:
     out += [f"| {m.strip()} | {x} | {y} | {t} |" for m, x, y, t in compare(a, b)]
     out += ["", "### By customer mood", "", f"| Mood | {name_a} | {name_b} |", "|---|---|---|"]
     out += [f"| {m} | {x} | {y} |" for m, x, y in by_mood(a, b)]
+    out += ["", "### By call reason (biggest drops first; few calls each: read them before concluding)", "",
+            f"| Reason | {name_a} | {name_b} |", "|---|---|---|"]
+    out += [f"| {m} | {x} | {y} |" for m, x, y, _ in by_reason(a, b)]
     out += ["", "### Retention route", "", f"- {name_a}: {retention_lines(a)}", f"- {name_b}: {retention_lines(b)}",
             "", f"_{len(a)} and {len(b)} calls. p < 0.05 means the difference is unlikely to be chance._", ""]
     return "\n".join(out)
@@ -147,6 +168,9 @@ def main() -> None:
     print("\nBy customer mood:")
     for mood, x, y in by_mood(a, b):
         print(f"  {mood:<20} {args.run_a}: {x:<36} {args.run_b}: {y}")
+    print("\nBy call reason (biggest drops first; few calls each, so read them before concluding):")
+    for reason, x, y, change in by_reason(a, b):
+        print(f"  {reason:<27} {args.run_a}: {x:<28} {args.run_b}: {y:<28} {change:+d} pts")
     print("\nRetention route:")
     print(f"  {args.run_a}: {retention_lines(a)}")
     print(f"  {args.run_b}: {retention_lines(b)}")

@@ -386,3 +386,79 @@ def test_the_subject_sections_come_first_without_duplicates(monkeypatch):
     monkeypatch.setattr(knowledge, "search_policies", lambda q: found["topic" if q == "TOPIC" else "question"])
     text = tools.policy_search("une question", topic="TOPIC")
     assert text.index("Changement") < text.index("faq.md") and text.count("Changement de moyen") == 1
+
+
+def test_the_intent_search_can_be_turned_off_for_an_ablation(rules, monkeypatch):
+    monkeypatch.setenv("CALLVERSE_INTENT_SEARCH", "0")
+    state = call("Je voudrais passer au prélèvement automatique.", FOLLOW_UP, intent="change_payment_method")
+    _, calls = agent.prefetch(state)
+    assert calls[1].arguments == {"question": FOLLOW_UP}
+    monkeypatch.setenv("CALLVERSE_INTENT_SEARCH", "1")
+    assert agent.intent_search_on()
+
+
+# ---------------------------------------------------------------- the customer refuses the decision
+
+def refused_call(last: str, turn: int = 2, decided_turn: int = 1, escalate: bool = False) -> CallState:
+    """The decision was made after the 1st message; the customer then answers with `last`."""
+    result = decision(escalate).model_copy(update={"decided_turn": decided_turn})
+    messages = [Message(role="client", content="Ma facture a doublé !"),
+                Message(role="advisor", content="La compensation prévue pour votre dossier est de 15,00 €."),
+                Message(role="client", content=last)]
+    return CallState(call_id="t", customer_id="0001-AAAAA", persona="demanding", call_reason="complaint_billing",
+                     intent="complaint_billing", is_complaint=True, complaint_result=result, messages=messages,
+                     turn=turn)
+
+
+@pytest.mark.parametrize("line, refuses", [
+    ("C'est inacceptable, je refuse cette offre. Je veux parler à un responsable.", True),
+    ("Je veux que vous me parliez directement avec un responsable.", True),
+    ("Je voudrais parler au superviseur, maintenant.", True),
+    ("C'est trop peu, mais bon.", False),                    # contesting the amount: explain the grid
+    ("Je vous remercie de transmettre mon dossier à ce responsable.", False),
+    ("Je veux parler à quelqu'un pour une réclamation.", False),
+])
+def test_refusal_words(line, refuses):
+    from callverse.agents.complaint import rules
+    assert rules.refuses_decision(line) is refuses
+
+
+def test_a_refused_decision_goes_to_a_supervisor_with_the_recourse(monkeypatch):
+    """night-3-0003: the advisor said a manager could not be reached "dans votre cas"; the customer hung up.
+    complaint_procedures.md: a refused ticket is reviewed by a supervisor, and the customer hears the recourse."""
+    model = use(monkeypatch, ScriptedModel(["Je comprends. Puis-je vous aider pour autre chose ?"]))
+    update = agent.advisor_node(refused_call("C'est inacceptable, je veux parler à un responsable."))
+    result = update["complaint_result"]
+    assert result.escalate and result.escalation_reasons[-1].startswith("le client refuse")
+    text = update["messages"][0].content
+    assert prompts.ESCALATION_SENTENCE in text and prompts.RECOURSE_SENTENCE in text
+    assert text.endswith(prompts.CLOSING)
+    assert "ne dis jamais qu'un responsable ne peut pas" in answer_prompt(model).content
+
+
+def test_refusal_words_before_the_decision_do_not_escalate(monkeypatch):
+    use(monkeypatch, ScriptedModel(["La compensation prévue est de 15,00 €. Puis-je vous aider pour autre chose ?"]))
+    update = agent.advisor_node(refused_call("C'est inacceptable !", turn=1, decided_turn=1))
+    assert "complaint_result" not in update                  # the customer has not heard the decision yet
+
+
+def test_the_recourse_is_said_once(monkeypatch):
+    state = refused_call("Je refuse.", escalate=True)
+    reasons = [agent.complaint_rules.REFUSAL_REASON]
+    state = state.model_copy(update={"complaint_result": state.complaint_result.model_copy(
+        update={"escalation_reasons": reasons})})
+    once = agent.tell_recourse("Votre dossier est transmis.", state)
+    assert once.count("Médiateur") == 1
+    later = state.model_copy(update={"messages": [*state.messages, Message(role="advisor", content=once)]})
+    assert agent.tell_recourse("D'accord.", later) == "D'accord."
+
+
+def test_a_tracking_number_is_given_when_asked():
+    result = decision(False).model_copy(update={"ticket_id": "TCK-000042"})
+    state = call("Ma facture a doublé !", "Pouvez-vous me donner un numéro de suivi ?", is_complaint=True,
+                 complaint_result=result)
+    text = agent.finish("Je ne peux pas vous donner de numéro de suivi spécifique. Puis-je vous aider pour autre chose ?",
+                        state)
+    assert "TCK-000042" in text and "ne peux pas" not in text and text.endswith(prompts.CLOSING)
+    calm = call("Ma facture a doublé !", "Merci.", is_complaint=True, complaint_result=result)
+    assert agent.finish("Je vous en prie.", calm) == "Je vous en prie."

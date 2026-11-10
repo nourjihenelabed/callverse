@@ -102,6 +102,7 @@ Actions à proposer : {actions}
 Compensation accordée : {compensation} (un geste commercial versé en avoir sur la prochaine facture ; ce n'est
 pas le remboursement d'un montant facturé à tort, qui se fait en plus et en totalité si une action le prévoit)
 Règles appliquées : {rules}
+Référence du dossier : {ticket} (donne-la si le client demande un numéro de suivi)
 {escalation}"""
 
 ESCALATION = """IMPORTANT : le dossier est transmis à un responsable, qui recontactera le client sous 48 heures ouvrées.
@@ -110,6 +111,17 @@ Ne les promets pas. La raison du transfert est interne : ne la donne jamais au c
 
 ESCALATION_SENTENCE = "Votre dossier est transmis à un responsable, qui vous recontactera sous 48 heures ouvrées."
 RETENTION_SENTENCE = "Un responsable a étudié votre dossier et vous propose {offer}."
+REFERENCE_SENTENCE = "La référence de votre dossier est {ticket}."
+RECOURSE_SENTENCE = ("En cas de désaccord persistant, vous pourrez aussi écrire au service consommateurs de "
+                     "CallVerse, puis saisir gratuitement le Médiateur des communications électroniques.")
+REFUSED_REMINDER = """
+Le client refuse la solution proposée : son refus est enregistré et un responsable revoit son dossier. Ne
+défends plus le montant et ne dis jamais qu'un responsable ne peut pas être sollicité."""
+RETENTION_DEFERRED = """
+
+Le client a parlé de partir. Son dossier est transmis à un responsable qui le recontactera : c'est ce
+responsable qui étudiera toute sa situation. Ne présente aucune offre maintenant, et ne dis jamais qu'il n'y
+en a pas."""
 OFFER_STILL_VALID = """
 Exception : l'offre de fidélisation du responsable ({offer}) est déjà décidée et reste valable. Tu peux la
 rappeler au client ; ne dis jamais que vous n'avez pas d'offre."""
@@ -127,7 +139,9 @@ pour étudier sa situation. Dis-le au client, et explique-lui les conditions de 
 RETENTION_CONDITIONS = """
 
 Le client veut partir. Écoute la raison de son départ, puis explique-lui clairement les conditions de
-résiliation de son contrat (délai, frais), d'après les règles. Ne propose aucune offre commerciale."""
+résiliation de son contrat (délai, frais), d'après les règles. Tu n'as ni réduction ni promotion à proposer.
+Si le client parle du prix, ne dis pas qu'il n'y a rien : s'il existe dans le catalogue une offre moins chère
+qui correspond à ses besoins et qu'il n'a pas déjà, présente-la avec son prix exact. Sinon, respecte son choix."""
 
 RETENTION_REMINDER = """
 
