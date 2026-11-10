@@ -9,6 +9,13 @@ The AI calls (saved by scripts/run_calls.py) measure two things the Technion dat
 The call durations and the arrival pattern stay those of the real Technion data (calibration.json):
 the twin changes how many calls there are and where they go, not how long they last.
 
+The file follows the loop in three steps:
+1. measure(): what a batch of AI calls says, per queue (FCR, share that became complaints).
+2. twin_load() and twin_config(): how many calls the floor gets because of it, and in which queue.
+   Example: FCR 70% in a queue, half of the unresolved customers call back → 1 + 0.30 × 0.5 = 1.15,
+   so 15% more calls in that queue.
+3. compare(): the same simulated days with each floor manager, to see what it costs.
+
     measured = measure(load_calls("night-1"))
     config = twin_config(measured)              # a CenterConfig for the workforce simulation
 
@@ -19,6 +26,7 @@ Then train an RL agent on the twin's floor (optional): python -m workforce.train
 import argparse
 import json
 import statistics
+from dataclasses import replace
 from pathlib import Path
 
 from workforce.simulation import QUEUES, CenterConfig, Policy
@@ -35,28 +43,39 @@ TWIN_MODEL_PATH = Path(__file__).resolve().parent / "models" / "ppo_twin.zip"
 # ---------------------------------------------------------------- 1. measure the calls
 
 def measure(rows: list[dict]) -> dict:
-    """What the AI calls say about each queue (rows from callverse.results.load_calls)."""
-    per_queue = {}
-    for queue in QUEUES:
-        calls = [r for r in rows if r["queue"] == queue]
-        n = len(calls)
-        resolved = sum(r["outcome"] in RESOLVED for r in calls)
-        to_complaint = sum(bool(r["is_complaint"]) for r in calls) if queue != "complaint" else 0
-        per_queue[queue] = {
-            "calls": n,
-            "fcr": round(resolved / n, 3) if n else None,
-            "to_complaint": round(to_complaint / n, 3) if n and queue != "complaint" else 0.0,
-            "avg_turns": round(statistics.mean(r["turns"] for r in calls), 2) if n else None,
-        }
-    total = len(rows)
+    """What the AI calls say about each queue (rows from callverse.results.load_calls).
+
+    Returns {"calls", "fcr", "queues": {queue: {"calls", "fcr", "to_complaint", "avg_turns"}}}.
+    fcr is None when there are no calls to measure."""
     return {
-        "calls": total,
-        "fcr": round(sum(r["outcome"] in RESOLVED for r in rows) / total, 3) if total else None,
-        "queues": per_queue,
+        "calls": len(rows),
+        "fcr": _resolved_share(rows),
+        "queues": {queue: _measure_queue([r for r in rows if r["queue"] == queue], queue) for queue in QUEUES},
     }
 
 
+def _measure_queue(calls: list[dict], queue: str) -> dict:
+    n = len(calls)
+    if queue == "complaint" or not n:
+        to_complaint = 0.0                      # complaint calls are already in the complaint queue
+    else:
+        to_complaint = round(sum(bool(r["is_complaint"]) for r in calls) / n, 3)
+    return {
+        "calls": n,
+        "fcr": _resolved_share(calls),
+        "to_complaint": to_complaint,
+        "avg_turns": round(statistics.mean(r["turns"] for r in calls), 2) if n else None,
+    }
+
+
+def _resolved_share(calls: list[dict]) -> float | None:
+    """Share of calls resolved or escalated (first-contact resolution), or None without calls."""
+    resolved = sum(r["outcome"] in RESOLVED for r in calls)
+    return round(resolved / len(calls), 3) if calls else None
+
+
 def usable(measured: dict, queue: str, key: str, neutral: float) -> float:
+    """A measured value of `queue`, or `neutral` (no effect) when too few calls were measured."""
     q = measured["queues"][queue]
     return q[key] if q["calls"] >= MIN_CALLS and q[key] is not None else neutral
 
@@ -67,22 +86,33 @@ def twin_load(measured: dict, base: CenterConfig | None = None, callback_share: 
               fcr: dict | None = None) -> dict:
     """How the calls of each queue change. `fcr` replaces the measured FCR (for "what if" scenarios).
 
-    Returns {"volume_factor", "call_mix", "repeat_factor": {queue: ...}}."""
+    Returns {"volume_factor", "call_mix", "repeat_factor": {queue: ...}}:
+    - repeat_factor: calls of each queue, with the repeat calls, compared with today (1.15 = +15%)
+    - volume_factor: all calls compared with today
+    - call_mix: the new share of each queue (adds up to 1)
+    """
     base = base or CenterConfig()
-    mix, new = base.call_mix, {}
+
+    # 1. Repeat calls: an unresolved customer calls back once, with probability callback_share.
     repeat = {}
     for queue in QUEUES:
-        rate = (fcr or {}).get(queue, usable(measured, queue, "fcr", 1.0))
-        repeat[queue] = 1 + (1 - rate) * callback_share
-    moved = 0.0
+        resolved = (fcr or {}).get(queue, usable(measured, queue, "fcr", 1.0))
+        repeat[queue] = 1 + (1 - resolved) * callback_share
+
+    # 2. Calls of each queue, counting today's calls as 1 in total. The general and technical
+    #    calls that become complaints move to the complaint queue.
+    calls = {}
+    moved_to_complaint = 0.0
     for queue in ("general", "technical"):
         share = usable(measured, queue, "to_complaint", 0.0)
-        calls = mix[queue] * repeat[queue]
-        new[queue] = calls * (1 - share)
-        moved += calls * share
-    new["complaint"] = mix["complaint"] * repeat["complaint"] + moved
-    volume = sum(new.values())
-    return {"volume_factor": round(volume, 4), "call_mix": {q: round(new[q] / volume, 4) for q in QUEUES},
+        queue_calls = base.call_mix[queue] * repeat[queue]
+        calls[queue] = queue_calls * (1 - share)
+        moved_to_complaint += queue_calls * share
+    calls["complaint"] = base.call_mix["complaint"] * repeat["complaint"] + moved_to_complaint
+
+    # 3. The total compared with today, and how it splits between the queues.
+    volume = sum(calls.values())
+    return {"volume_factor": round(volume, 4), "call_mix": {q: round(calls[q] / volume, 4) for q in QUEUES},
             "repeat_factor": {q: round(r, 4) for q, r in repeat.items()}}
 
 
@@ -110,15 +140,15 @@ class OldForecast(Policy):
         self.policy, self.believed, self.actual = policy, believed, actual
 
     def decide(self, snapshot):
-        from dataclasses import replace
-
         hour = min(int(snapshot.minute // 60), len(self.actual.calls_per_hour) - 1)
         actual_rate, believed_rate = self.actual.calls_per_hour[hour], self.believed.calls_per_hour[hour]
+        # old forecast / twin forecast this hour, e.g. 1 / 1.16 when the twin has 16% more calls
         ratio = believed_rate / actual_rate if actual_rate else 1.0
+        # per queue: the twin's expected calls, scaled back to the old total, then split with the old mix
         expected = {q: snapshot.expected_calls.get(q, 0) * ratio * self.believed.call_mix[q]
                     / (self.actual.call_mix[q] or 1) for q in QUEUES}
-        return self.policy.decide(replace(snapshot, calls_next_hour=snapshot.calls_next_hour * ratio,
-                                          expected_calls=expected))
+        old_view = replace(snapshot, calls_next_hour=snapshot.calls_next_hour * ratio, expected_calls=expected)
+        return self.policy.decide(old_view)
 
 
 def load_agent(path: Path, config: CenterConfig):
@@ -163,6 +193,7 @@ def day_cost(result) -> float:
 
 
 def run_days(policy, config: CenterConfig, days) -> dict:
+    """Simulates the same days with one floor manager and averages the results."""
     from workforce.simulation import CallCenter
 
     kpis, costs = [], []
@@ -170,7 +201,10 @@ def run_days(policy, config: CenterConfig, days) -> dict:
         result = CallCenter(policy, seed=day, config=config).run()
         kpis.append(result.kpis())
         costs.append(day_cost(result))
-    mean = lambda key: statistics.mean(k[key] for k in kpis)  # noqa: E731
+
+    def mean(key):
+        return statistics.mean(k[key] for k in kpis)
+
     return {"calls": round(mean("calls")), "sla": round(mean("sla"), 4),
             "abandonment_rate": round(mean("abandonment_rate"), 4),
             "staff_cost_eur": round(mean("staff_cost_eur")), "total_cost_eur": round(statistics.mean(costs))}
@@ -185,19 +219,22 @@ def compare(measured: dict, days=range(20_000, 20_020), target_fcr: float = 0.8,
     from workforce.manager import FixedRulePolicy
     from workforce.train import MODEL_PATH
 
+    # three floors: the bank as calibrated, the twin's, and the twin's with a better advisor
     base = CenterConfig()
     twin = twin_config(measured, base, callback_share=callback_share)
     better_fcr = what_if_fcr(measured, target_fcr)
     better = twin_config(measured, base, callback_share=callback_share, fcr=better_fcr)
+
+    # FixedRulePolicy(x) = the Erlang C plan computed from floor x's forecast, run on the floor given after it
     results = {
         "As calibrated (Technion only)": run_days(FixedRulePolicy(base), base, days),
-        "AI calls, plan ignores them": run_days(FixedRulePolicy(base), twin, days),
+        "AI calls, plan ignores them": run_days(FixedRulePolicy(base), twin, days),     # bank plan, twin's calls
         "AI calls, plan uses them": run_days(FixedRulePolicy(twin), twin, days),
         f"Advisor at {target_fcr:.0%} FCR, plan uses it": run_days(FixedRulePolicy(better), better, days),
     }
     if with_rl:
         bank_agent = load_agent(MODEL_PATH, base)
-        if bank_agent is not None:
+        if bank_agent is not None:              # shown the old forecast, so the repeat calls are a surprise
             results["RL agent trained on bank data (does not know)"] = run_days(
                 OldForecast(bank_agent, base, twin), twin, days)
         twin_agent = load_agent(TWIN_MODEL_PATH, twin)
@@ -227,8 +264,10 @@ def print_report(report: dict) -> None:
     for name, r in report["results"].items():
         print(f"{name:<38}{r['calls']:>10}{r['sla']:>8.1%}{r['abandonment_rate']:>10.1%}"
               f"{r['staff_cost_eur']:>9,}{r['total_cost_eur']:>9,}")
+    # rows 3 and 4 of compare(): the twin's floor today, and the same floor with the better advisor
     names = list(report["results"])
-    saving = report["results"][names[2]]["total_cost_eur"] - report["results"][names[3]]["total_cost_eur"]
+    today, with_better_advisor = report["results"][names[2]], report["results"][names[3]]
+    saving = today["total_cost_eur"] - with_better_advisor["total_cost_eur"]
     print(f"\nA better advisor ({report['target_fcr']:.0%} first-contact resolution) saves {saving:,} € per day.")
 
 

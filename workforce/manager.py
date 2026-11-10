@@ -32,16 +32,23 @@ def tuned_rules() -> dict:
         rules = json.loads(CALIBRATION_PATH.read_text(encoding="utf-8")).get("rules", {})
     except FileNotFoundError:
         rules = {}
-    return {name: {**DEFAULT_RULES[name], **{k: v for k, v in rules.get(name, {}).items() if k in DEFAULT_RULES[name]}}
-            for name in DEFAULT_RULES}
+    settings = {}
+    for name, defaults in DEFAULT_RULES.items():
+        saved = rules.get(name, {})
+        # start from the defaults, then take each tuned value the defaults know about
+        settings[name] = {**defaults, **{key: value for key, value in saved.items() if key in defaults}}
+    return settings
 
 
 # ---------------------------------------------------------------- Erlang C
 
 def erlang_c(advisors: int, traffic: float) -> float:
-    """Probability that a call has to wait, with `traffic` Erlangs and `advisors` agents."""
+    """Probability that a call has to wait, with `traffic` Erlangs and `advisors` agents.
+
+    traffic = calls per hour × average call minutes / 60, i.e. how many advisors would be busy
+    all the time. The loop adds up traffic^k / k! for k = 0..advisors-1 (the Erlang C formula)."""
     if advisors <= traffic:
-        return 1.0
+        return 1.0                              # not enough advisors: every call waits
     term, total = 1.0, 1.0
     for k in range(1, advisors):
         term *= traffic / k
@@ -63,7 +70,7 @@ def advisors_needed(calls_per_hour: float, handle_minutes: float, target_seconds
     if calls_per_hour <= 0:
         return 0
     traffic = calls_per_hour * handle_minutes / 60
-    advisors = max(1, math.ceil(traffic))
+    advisors = max(1, math.ceil(traffic))       # start at the minimum, add one until the target is met
     while service_level(advisors, traffic, handle_minutes, target_seconds) < target:
         advisors += 1
     return advisors

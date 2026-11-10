@@ -23,6 +23,15 @@ from workforce.simulation import QUEUES, SCENARIOS, CallCenter, CenterConfig, Po
 
 MAX_CHANGE = 3                                  # the agent moves the plan by -3..+3 advisors per queue
 
+# The action is 4 whole numbers, as Gymnasium's MultiDiscrete gives them (always from 0 up):
+#   one per queue, 0..6, meaning -3..+3 advisors (value - MAX_CHANGE; 3 = keep the plan),
+#   then priority, 0 = off, 1 = on.
+# So [3, 3, 3, 0] means "follow the Erlang C plan exactly, priority off".
+
+# The observation is 20 numbers (see observation()):
+OBSERVATION_SIZE = 1 + 4 * len(QUEUES) + 4 + len(QUEUES)
+
+
 def random_surprises(rng: np.random.Generator) -> tuple:
     """A random training day: normal, quieter than forecast, or 1-2 surprise peaks of
     random queue, time, length and size. The agent is never told which: it has to
@@ -56,7 +65,17 @@ class RewardConfig:
 
 
 def observation(snapshot: Snapshot, plan: FixedRulePolicy, config: CenterConfig) -> np.ndarray:
-    """Turns a Snapshot into the numbers the agent sees (all roughly between 0 and 1)."""
+    """Turns a Snapshot into the numbers the agent sees (all roughly between 0 and 1).
+
+    In order (20 numbers):
+    - 1: time of day (0 = opening, 1 = end of overtime)
+    - 4 per queue (general, technical, complaint): customers waiting, advisors staffed,
+      average wait last period, advisors in the Erlang C plan this hour
+    - 4: last period's SLA, hang-ups last period, calls forecast next hour, priority on or off
+    - 1 per queue: calls received last period compared with the forecast (0.5 = as expected)
+    Each value is divided by a typical size (30 waiting, 10 advisors, 60 s...) so they are on
+    similar scales, which helps the neural network learn.
+    """
     hour = min(int(snapshot.minute // 60), len(plan.plan) - 1)
     end = config.day_minutes + config.overtime_minutes
     values = [snapshot.minute / end]
@@ -76,18 +95,23 @@ def observation(snapshot: Snapshot, plan: FixedRulePolicy, config: CenterConfig)
 
 
 def apply_correction(snapshot: Snapshot, plan: FixedRulePolicy, action) -> dict:
-    """Erlang C plan for this hour, corrected by the agent's action."""
+    """Erlang C plan for this hour, corrected by the agent's action (see the action format above)."""
     planned = plan.decide(snapshot)
-    wanted = {q: max(0, planned[q] + int(action[i]) - MAX_CHANGE) for i, q in enumerate(QUEUES)}
+    wanted = {}
+    for i, q in enumerate(QUEUES):
+        change = int(action[i]) - MAX_CHANGE        # 0..6 becomes -3..+3
+        wanted[q] = max(0, planned[q] + change)
     wanted["priority"] = bool(action[len(QUEUES)])
     return wanted
 
 
-class _Waiting(Policy):
-    """Inside the environment, the decision comes from step(), not from a rule."""
+class _ActionFromStep(Policy):
+    """Inside the environment, the decision comes from step(), not from a rule:
+    step() stores the agent's action here, and the simulation reads it at the next decision."""
 
     def __init__(self, plan: FixedRulePolicy):
-        self.plan, self.action = plan, np.array([MAX_CHANGE] * len(QUEUES) + [0])
+        self.plan = plan
+        self.action = np.array([MAX_CHANGE] * len(QUEUES) + [0])   # until the first step: follow the plan
 
     def decide(self, snapshot: Snapshot) -> dict:
         return apply_correction(snapshot, self.plan, self.action)
@@ -106,40 +130,48 @@ class CallCenterEnv(gym.Env):
             raise ValueError(f"Unknown scenarios: {unknown}")
         self.plan = FixedRulePolicy(self.config)
         self.action_space = gym.spaces.MultiDiscrete([2 * MAX_CHANGE + 1] * len(QUEUES) + [2])
-        self.observation_space = gym.spaces.Box(0.0, 5.0, shape=(1 + 5 * len(QUEUES) + 4,), dtype=np.float32)
+        self.observation_space = gym.spaces.Box(0.0, 5.0, shape=(OBSERVATION_SIZE,), dtype=np.float32)
         self.center = None
 
     def reset(self, *, seed=None, options=None):
+        """Starts a new day. options: {"day": seed of the day, "scenario": a scenario name}."""
         super().reset(seed=seed)
         options = options or {}
         day_seed = int(options["day"]) if "day" in options else int(self.np_random.integers(0, 2**31 - 1))
         if options.get("scenario"):
             scenario = options["scenario"]
-        elif self.scenarios:
+        elif self.scenarios:                    # pick a named scenario with the given weights
             names = list(self.scenarios)
             scenario = names[int(self.np_random.choice(len(names), p=list(self.scenarios.values())))]
-        else:
+        else:                                   # training: a random day
             scenario = random_surprises(self.np_random)
-        self.policy = _Waiting(self.plan)
+        self.policy = _ActionFromStep(self.plan)
         self.center = CallCenter(self.policy, seed=day_seed, config=self.config, scenario=scenario)
         self._totals = self._current_totals()
         return observation(self.center._snapshot(), self.plan, self.config), {"day": day_seed, "scenario": scenario}
 
     def step(self, action):
+        """Applies the action, runs 15 simulated minutes, and returns what happened."""
         self.policy.action = np.asarray(action)
         self.center.run_until(self.center.env.now + self.config.decision_minutes)
+
+        # what the period cost: the totals now minus the totals at the last step
         totals = self._current_totals()
         staff, abandoned, late = (totals[k] - self._totals[k] for k in ("staff", "abandoned", "late"))
         self._totals = totals
         r = self.reward_config
         cost = staff + r.abandoned_call * abandoned + r.late_answer * late
-        terminated = self.center.finished
+        reward = -cost / r.scale                # the agent maximises reward, so it minimises cost
+
+        terminated = self.center.finished       # the day (with its overtime) is over
         info = {"staff_cost": staff, "abandoned": abandoned, "late": late}
         if terminated:
             info["kpis"] = self.center.result.kpis()
-        return observation(self.center._snapshot(), self.plan, self.config), -cost / r.scale, terminated, False, info
+        next_observation = observation(self.center._snapshot(), self.plan, self.config)
+        return next_observation, reward, terminated, False, info
 
     def _current_totals(self) -> dict:
+        """Running totals of the day so far: staff cost, hang-ups, calls answered late."""
         res = self.center.result
         answered, within = sum(res.answered.values()), sum(res.within_sla.values())
         return {"staff": res.staff_cost, "abandoned": sum(res.abandoned.values()), "late": answered - within}

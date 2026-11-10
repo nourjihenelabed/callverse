@@ -24,6 +24,7 @@ from workforce.simulation import QUEUES, CallCenter, CenterConfig, Policy
 from workforce.train import MODEL_PATH
 
 OUT_DIR = MODEL_PATH.parent / "explain"
+# A name for each of the 20 numbers the agent sees, in the same order as workforce.env.observation()
 INPUT_NAMES = (
     ["time of day"]
     + [f"{q}: {what}" for q in QUEUES for what in ("customers waiting", "advisors working", "last avg wait", "Erlang C plan")]
@@ -46,6 +47,7 @@ class Recorder(Policy):
 
 
 def record_day(policy: Policy, scenario: str, day: int) -> list:
+    """Simulates one day. Returns [(snapshot, decision), ...], one pair per 15-minute decision."""
     recorder = Recorder(policy)
     CallCenter(recorder, seed=day, scenario=scenario).run()
     return recorder.log
@@ -53,7 +55,21 @@ def record_day(policy: Policy, scenario: str, day: int) -> list:
 
 # ---------------------------------------------------------------- 1. one day, hour by hour
 
+def _real_staffing(log: list, queue: str) -> list:
+    """Advisors really on duty in `queue` during each period = what the next snapshot sees.
+    It can differ from the decision: after the 1-hour minimum shift, a policy cannot always
+    send advisors home as soon as it asks."""
+    return [log[k + 1][0].staffed[queue] for k in range(len(log) - 1)] + [log[-1][0].staffed[queue]]
+
+
+def _calls_vs_forecast(log: list, queue: str) -> list:
+    """Calls received in the last 15 minutes ÷ calls the forecast expected (None when none expected)."""
+    return [snap.last_calls.get(queue, 0) / snap.expected_calls[queue] if snap.expected_calls.get(queue) else None
+            for snap, _ in log]
+
+
 def timeline(agent: RLPolicy, scenario: str = "network_outage", day: int = 10_000):
+    """One chart per queue: the four policies' staffing over the day, and the calls vs forecast as bars."""
     from plotly.subplots import make_subplots
 
     runs = {
@@ -67,18 +83,13 @@ def timeline(agent: RLPolicy, scenario: str = "network_outage", day: int = 10_00
                         subplot_titles=[f"{q.capitalize()} queue" for q in QUEUES],
                         specs=[[{"secondary_y": True}]] * len(QUEUES))
     for row, q in enumerate(QUEUES, start=1):
-        for name, log in runs.items():
+        for name, log in runs.items():          # one staircase line per policy
             hours = [open_hour + snap.minute / 60 for snap, _ in log]
-            # real staffing during each period = what the next snapshot sees (after the 1-hour minimum
-            # shift, a policy cannot always send advisors home as soon as it asks)
-            real = [log[k + 1][0].staffed[q] for k in range(len(log) - 1)] + [log[-1][0].staffed[q]]
-            fig.add_scatter(x=hours, y=real, name=name, line_shape="hv",
+            fig.add_scatter(x=hours, y=_real_staffing(log, q), name=name, line_shape="hv",
                             line=dict(color=COLORS[name], width=3 if name == "RL agent" else 2),
                             legendgroup=name, showlegend=row == 1, row=row, col=1, secondary_y=False)
-        log = runs["RL agent"]
-        ratio = [snap.last_calls.get(q, 0) / snap.expected_calls[q] if snap.expected_calls.get(q) else None
-                 for snap, _ in log]
-        fig.add_bar(x=[open_hour + snap.minute / 60 for snap, _ in log], y=ratio,
+        log = runs["RL agent"]                  # the calls are the same for every policy
+        fig.add_bar(x=[open_hour + snap.minute / 60 for snap, _ in log], y=_calls_vs_forecast(log, q),
                     name="Calls received ÷ forecast (last 15 min)", marker_color="rgba(208, 68, 68, 0.30)",
                     legendgroup="calls", showlegend=row == 1, row=row, col=1, secondary_y=True)
         fig.update_yaxes(title_text="advisors on duty", row=row, col=1, secondary_y=False, rangemode="tozero")
@@ -93,6 +104,7 @@ def timeline(agent: RLPolicy, scenario: str = "network_outage", day: int = 10_00
 # ---------------------------------------------------------------- 2. average corrections to the plan
 
 def corrections(agent: RLPolicy, scenarios=("normal", "network_outage", "quiet_day"), days=range(10_000, 10_010)):
+    """A heat map per scenario: advisors the agent adds (+) or removes (−) from the plan, per hour and queue."""
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
 
@@ -100,12 +112,12 @@ def corrections(agent: RLPolicy, scenarios=("normal", "network_outage", "quiet_d
     hours = list(range(cfg.open_hour, cfg.close_hour))
     fig = make_subplots(rows=1, cols=len(scenarios), subplot_titles=scenarios, shared_yaxes=True)
     for col, scenario in enumerate(scenarios, start=1):
-        total = np.zeros((len(QUEUES), len(hours)))
-        count = np.zeros(len(hours))
+        total = np.zeros((len(QUEUES), len(hours)))   # sum of (agent − plan), per queue and hour
+        count = np.zeros(len(hours))                   # decisions counted in each hour
         for day in days:
             for snap, wanted in record_day(agent, scenario, day):
-                h = int(snap.minute // 60)
-                if h >= len(hours):
+                h = int(snap.minute // 60)              # hours since opening
+                if h >= len(hours):                     # overtime after closing: not shown
                     continue
                 planned = plan.decide(snap)
                 total[:, h] += [wanted[q] - planned[q] for q in QUEUES]
@@ -125,22 +137,25 @@ def corrections(agent: RLPolicy, scenarios=("normal", "network_outage", "quiet_d
 
 def what_matters(agents, scenarios=("normal", "network_outage", "billing_day", "afternoon_promo"),
                  days=range(10_000, 10_005), seed: int = 0):
+    """Permutation importance: shuffle one input across all situations (so it carries no information)
+    and measure how much the decisions change. Returns the chart and {input name: importance}."""
     import plotly.graph_objects as go
 
     cfg, plan = CenterConfig(), FixedRulePolicy()
+    # the situations met during real days, as the 20 numbers the agent sees (one row per situation)
     situations = [snap for s in scenarios for d in days for snap, _ in record_day(agents[0], s, d)]
     X = np.stack([observation(snap, plan, cfg) for snap in situations])
     rng = np.random.default_rng(seed)
-    importance = np.zeros(X.shape[1])
+    importance = np.zeros(X.shape[1])           # one score per input
     for agent in agents:
-        base, _ = agent.model.predict(X, deterministic=True)
+        base, _ = agent.model.predict(X, deterministic=True)     # the agent's decisions as they are
         for j in range(X.shape[1]):
             shuffled = X.copy()
-            shuffled[:, j] = rng.permutation(shuffled[:, j])
+            shuffled[:, j] = rng.permutation(shuffled[:, j])     # input j mixed up between situations
             changed, _ = agent.model.predict(shuffled, deterministic=True)
             # how many advisors the decision moves on average, plus priority flips
             importance[j] += np.abs(changed - base).sum(axis=1).mean()
-    importance /= len(agents)
+    importance /= len(agents)                   # average over the trained agents
     order = np.argsort(importance)
     fig = go.Figure(go.Bar(x=importance[order], y=[INPUT_NAMES[i] for i in order], orientation="h",
                            marker_color="#2f6db3"))
@@ -152,6 +167,7 @@ def what_matters(agents, scenarios=("normal", "network_outage", "billing_day", "
 
 
 def main() -> None:
+    """Writes the three kinds of chart for the agents trained on the bank floor."""
     paths = sorted(MODEL_PATH.parent.glob("ppo_staffing*.zip"))
     if not paths:
         raise SystemExit("No trained agent yet. Run: python -m workforce.train")
